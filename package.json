@@ -1,0 +1,19 @@
+{
+  "name": "horun-drama",
+  "private": true,
+  "version": "1.0.0",
+  "description": "HorunDrama · 个人自用的 Windows 短剧播放器（重做中）",
+  "type": "module",
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:core": "node --watch apps/core/src/index.ts",
+    "dev:web": "pnpm --filter @horun/web-next run dev",
+    "build": "pnpm --filter @horun/web-next run build",
+    "start": "node apps/core/src/index.ts",
+    "typecheck": "pnpm -r --parallel run typecheck"
+  }
+}

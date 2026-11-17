@@ -1,0 +1,99 @@
+{
+  "name": "@horun/desktop",
+  "private": true,
+  "version": "1.1.2",
+  "description": "HorunDrama · Windows 桌面端",
+  "type": "module",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "node launch.mjs",
+    "dev": "node launch.mjs --dev",
+    "launcher": "node scripts/build-launcher.mjs",
+    "pack": "node scripts/prepare-vendor.mjs && node scripts/build-launcher.mjs && electron-builder --win --dir",
+    "dist": "node scripts/prepare-vendor.mjs && node scripts/build-launcher.mjs && electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.horun.drama",
+    "productName": "HorunDrama",
+    "asar": true,
+    "npmRebuild": false,
+    "compression": "normal",
+    "afterPack": "scripts/afterPack.cjs",
+    "directories": {
+      "output": "release",
+      "buildResources": "resources"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/ffmpeg",
+        "to": "ffmpeg"
+      },
+      {
+        "from": "resources/icon.ico",
+        "to": "icon.ico"
+      },
+      {
+        "from": "resources/icon.png",
+        "to": "icon.png"
+      },
+      {
+        "from": "resources/splash.html",
+        "to": "splash.html"
+      },
+      {
+        "from": "resources/hgsigner",
+        "to": "hgsigner"
+      },
+      {
+        "from": "../core/src",
+        "to": "core/src"
+      },
+      {
+        "from": "../core/package.json",
+        "to": "core/package.json"
+      },
+      {
+        "from": "vendor/openhongguo",
+        "to": "core/node_modules/openhongguo"
+      },
+      {
+        "from": "../web-next/dist",
+        "to": "web-next/dist"
+      },
+      {
+        "from": "resources/使用说明.txt",
+        "to": "使用说明.txt"
+      }
+    ],
+    "win": {
+      "icon": "resources/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "perMachine": false,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": false,
+      "shortcutName": "HorunDrama",
+      "include": "installer.nsh",
+      "runAfterFinish": false
+    }
+  }
+}

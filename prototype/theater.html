@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>一幕 · 竖屏剧场（UI 原型）</title>
+<style>
+  :root{
+    --ink:#0A0908;
+    --ink-2:#12100D;
+    --panel:#0E0D0B;
+    --line:rgba(242,234,224,.09);
+    --line-strong:rgba(242,234,224,.18);
+    --paper:#F2EAE0;
+    --muted:rgba(242,234,224,.50);
+    --muted-2:rgba(242,234,224,.30);
+    --ember:#FF4D2E;
+    --gold:#E5B45C;
+    --serif:"Songti SC","Noto Serif SC","Source Han Serif SC",STSong,SimSun,Georgia,serif;
+    --sans:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--ink);
+    color:var(--paper);
+    font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+
+  /* ---------- 布局 ---------- */
+  .app{
+    display:grid;
+    grid-template-columns:76px minmax(0,1fr) 348px;
+    height:100vh;
+  }
+
+  /* ---------- 左侧导航 ---------- */
+  .rail{
+    border-right:1px solid var(--line);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:6px;
+    padding:18px 0 14px;
+    background:linear-gradient(180deg,#0C0B09,#0A0908);
+  }
+  .brand{
+    width:36px;height:36px;border-radius:11px;
+    display:grid;place-items:center;
+    background:linear-gradient(150deg,var(--ember),#8E2312);
+    box-shadow:0 6px 18px -6px rgba(255,77,46,.75);
+    font-family:var(--serif);font-size:17px;color:#0A0908;font-weight:700;
+    margin-bottom:20px;
+  }
+  .rail-btn{
+    width:52px;height:52px;border-radius:14px;
+    display:grid;place-items:center;gap:2px;
+    color:var(--muted);
+    transition:color .18s, background .18s, transform .18s;
+  }
+  .rail-btn span{font-size:9.5px;letter-spacing:.06em;opacity:.75}
+  .rail-btn:hover{color:var(--paper);background:rgba(242,234,224,.05);transform:translateY(-1px)}
+  .rail-btn.is-active{color:var(--paper);background:rgba(255,77,46,.10)}
+  .rail-btn.is-active svg{color:var(--ember)}
+  .rail-spacer{flex:1}
+  .avatar{
+    width:34px;height:34px;border-radius:50%;
+    border:1px solid var(--line-strong);
+    background:radial-gradient(circle at 30% 25%,#3A342C,#17140F);
+    display:grid;place-items:center;font-size:11px;color:var(--muted);
+  }
+
+  /* ---------- 主区 ---------- */
+  .main{display:flex;flex-direction:column;min-width:0}
+  .topbar{
+    height:64px;flex:0 0 64px;
+    display:flex;align-items:center;gap:16px;
+    padding:0 26px;
+    border-bottom:1px solid var(--line);
+  }
+  .search{
+    flex:1;max-width:420px;height:36px;border-radius:10px;
+    background:rgba(242,234,224,.04);
+    border:1px solid var(--line);
+    display:flex;align-items:center;gap:9px;padding:0 12px;
+    color:var(--muted);font-size:13px;
+    transition:border-color .2s, background .2s;
+  }
+  .search:hover{border-color:var(--line-strong);background:rgba(242,234,224,.06)}
+  .search kbd{
+    margin-left:auto;font-family:var(--sans);font-size:10px;
+    border:1px solid var(--line-strong);border-radius:4px;padding:1px 5px;color:var(--muted-2);
+  }
+  .crumb{font-size:12px;color:var(--muted-2);letter-spacing:.08em}
+  .top-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .ghost-btn{
+    height:32px;padding:0 12px;border-radius:8px;font-size:12.5px;
+    border:1px solid var(--line);color:var(--muted);
+    transition:.18s;
+  }
+  .ghost-btn:hover{color:var(--paper);border-color:var(--line-strong)}
+
+  .stage{
+    flex:1;position:relative;
+    display:grid;place-items:center;
+    min-height:0;
+    padding:20px 24px 22px;
+  }
+  /* 环境光 */
+  .ambient{
+    position:absolute;inset:-10% 6%;
+    filter:blur(70px) saturate(1.25);
+    opacity:.55;
+    pointer-events:none;
+    background:
+      radial-gradient(38% 44% at 46% 40%, rgba(255,77,46,.55), transparent 70%),
+      radial-gradient(32% 38% at 60% 62%, rgba(229,180,92,.38), transparent 72%),
+      radial-gradient(46% 52% at 54% 52%, rgba(110,52,120,.28), transparent 74%);
+    animation:breathe 11s ease-in-out infinite;
+  }
+  @keyframes breathe{
+    0%,100%{opacity:.42;transform:scale(1)}
+    50%{opacity:.62;transform:scale(1.04)}
+  }
+
+  /* 竖屏舞台 */
+  .screen{
+    position:relative;
+    height:min(74vh,660px);
+    aspect-ratio:9/16;
+    border-radius:22px;
+    overflow:hidden;
+    isolation:isolate;
+    background:
+      radial-gradient(120% 80% at 20% 0%, #2A1712 0%, transparent 55%),
+      radial-gradient(100% 90% at 90% 100%, #17202E 0%, transparent 60%),
+      linear-gradient(168deg,#241a16 0%,#120F0D 46%,#191318 100%);
+    box-shadow:
+      0 40px 90px -30px rgba(0,0,0,.9),
+      0 0 0 1px rgba(242,234,224,.07),
+      0 0 120px -30px rgba(255,77,46,.28);
+    animation:stageIn .9s cubic-bezier(.16,.84,.28,1) both;
+  }
+  @keyframes stageIn{
+    from{opacity:0;transform:translateY(18px) scale(.97)}
+    to{opacity:1;transform:none}
+  }
+  /* 纹理 + 暗角 */
+  .screen::before{
+    content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/></filter><rect width='160' height='160' filter='url(%23n)' opacity='0.55'/></svg>");
+    opacity:.055;mix-blend-mode:overlay;
+  }
+  .screen::after{
+    content:"";position:absolute;inset:0;z-index:3;pointer-events:none;
+    background:
+      radial-gradient(120% 85% at 50% 45%, transparent 40%, rgba(6,5,4,.72) 100%),
+      linear-gradient(0deg, rgba(6,5,4,.92) 0%, rgba(6,5,4,.35) 26%, transparent 48%);
+  }
+  /* 光束 */
+  .beam{
+    position:absolute;inset:-30%;z-index:1;
+    background:conic-gradient(from 210deg at 50% 40%, transparent 0deg, rgba(255,190,140,.16) 42deg, transparent 96deg, transparent 300deg, rgba(120,150,255,.10) 336deg, transparent 360deg);
+    animation:spin 26s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .frame-art{
+    position:absolute;inset:0;z-index:1;
+    display:flex;flex-direction:column;justify-content:center;align-items:center;
+    gap:14px;padding:0 30px;text-align:center;
+  }
+  .frame-art .mark{
+    font-family:var(--serif);
+    font-size:15px;letter-spacing:.5em;text-indent:.5em;
+    color:rgba(242,234,224,.34);
+  }
+  .frame-art .bignum{
+    font-family:var(--serif);
+    font-size:clamp(52px,7.2vw,88px);
+    line-height:.95;
+    color:rgba(242,234,224,.14);
+    letter-spacing:-.02em;
+  }
+  .frame-art .line{
+    width:44px;height:1px;background:rgba(242,234,224,.22);
+  }
+  .frame-art .note{
+    font-size:11px;line-height:1.7;color:rgba(242,234,224,.30);letter-spacing:.12em;
+  }
+
+  /* 播放器 HUD */
+  .hud{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;padding:16px 16px 14px}
+  .hud-top{display:flex;align-items:center;gap:8px}
+  .pill{
+    font-size:10.5px;letter-spacing:.1em;padding:4px 9px;border-radius:999px;
+    background:rgba(10,9,8,.55);border:1px solid rgba(242,234,224,.16);
+    backdrop-filter:blur(8px);color:rgba(242,234,224,.8);
+  }
+  .pill.live b{color:var(--ember)}
+  .hud-spacer{flex:1}
+  .hud-bottom{margin-top:auto;display:flex;flex-direction:column;gap:10px}
+  .now-title{
+    font-family:var(--serif);font-size:20px;line-height:1.25;
+    text-shadow:0 2px 14px rgba(0,0,0,.7);
+  }
+  .now-sub{
+    font-size:11.5px;color:rgba(242,234,224,.56);letter-spacing:.05em;
+    display:flex;align-items:center;gap:8px;
+  }
+  .dot{width:3px;height:3px;border-radius:50%;background:var(--muted-2)}
+
+  /* 进度条 */
+  .track{
+    position:relative;height:16px;display:flex;align-items:center;cursor:pointer;
+  }
+  .track-bg{position:absolute;left:0;right:0;height:3px;border-radius:3px;background:rgba(242,234,224,.18)}
+  .track-fill{position:absolute;left:0;height:3px;border-radius:3px;background:linear-gradient(90deg,var(--gold),var(--ember));width:34%;box-shadow:0 0 12px rgba(255,77,46,.55)}
+  .track-head{position:absolute;left:34%;width:9px;height:9px;border-radius:50%;background:var(--paper);transform:translateX(-50%);box-shadow:0 0 0 4px rgba(255,77,46,.22)}
+  .track:hover .track-bg{height:4px}
+
+  .controls{display:flex;align-items:center;gap:4px}
+  .ctrl{
+    width:32px;height:32px;border-radius:9px;display:grid;place-items:center;
+    color:rgba(242,234,224,.78);transition:.16s;
+  }
+  .ctrl:hover{background:rgba(242,234,224,.10);color:#fff}
+  .ctrl.play{
+    width:40px;height:40px;border-radius:50%;
+    background:rgba(242,234,224,.94);color:#0A0908;
+  }
+  .ctrl.play:hover{background:#fff;transform:scale(1.04)}
+  .time{font-size:11px;color:rgba(242,234,224,.62);font-variant-numeric:tabular-nums;margin:0 6px}
+  .speed{font-size:11px;padding:3px 7px;border-radius:6px;border:1px solid rgba(242,234,224,.18);color:rgba(242,234,224,.72)}
+  .speed:hover{background:rgba(242,234,224,.08)}
+
+  /* ---------- 右侧信息栏 ---------- */
+  .panel{
+    border-left:1px solid var(--line);
+    background:linear-gradient(180deg,#0C0B09 0%,#0A0908 100%);
+    display:flex;flex-direction:column;
+    padding:22px 20px 16px;
+    gap:18px;
+    overflow-y:auto;
+    scrollbar-width:thin;
+    scrollbar-color:rgba(242,234,224,.14) transparent;
+  }
+  .p-title{font-family:var(--serif);font-size:23px;line-height:1.3;letter-spacing:.01em}
+  .p-title small{display:block;font-family:var(--sans);font-size:11px;color:var(--muted-2);letter-spacing:.22em;margin-bottom:7px}
+  .tags{display:flex;flex-wrap:wrap;gap:6px}
+  .tag{
+    font-size:10.5px;padding:3px 8px;border-radius:5px;
+    color:rgba(229,180,92,.9);background:rgba(229,180,92,.08);
+    border:1px solid rgba(229,180,92,.18);
+  }
+  .p-desc{font-size:11.5px;line-height:1.75;color:var(--muted)}
+
+  .section-head{
+    display:flex;align-items:baseline;gap:8px;
+    font-size:11px;letter-spacing:.16em;color:var(--muted-2);
+  }
+  .section-head b{color:var(--paper);font-weight:500;letter-spacing:.02em;font-size:12.5px}
+  .section-head .count{margin-left:auto;font-size:10.5px;color:var(--muted-2)}
+
+  .eps{
+    display:grid;grid-template-columns:repeat(5,1fr);gap:7px;
+    overflow-y:auto;padding-right:4px;
+    max-height:232px;
+    scrollbar-width:thin;scrollbar-color:rgba(242,234,224,.16) transparent;
+  }
+  .eps::-webkit-scrollbar{width:4px}
+  .eps::-webkit-scrollbar-thumb{background:rgba(242,234,224,.16);border-radius:4px}
+  .ep{
+    aspect-ratio:1;border-radius:8px;
+    display:grid;place-items:center;
+    font-size:12px;font-variant-numeric:tabular-nums;
+    color:rgba(242,234,224,.62);
+    background:rgba(242,234,224,.035);
+    border:1px solid transparent;
+    transition:.16s;
+  }
+  .ep:hover{background:rgba(242,234,224,.09);color:var(--paper);transform:translateY(-1px)}
+  .ep.is-active{
+    background:linear-gradient(150deg,var(--ember),#B22E16);
+    color:#fff;box-shadow:0 6px 16px -8px rgba(255,77,46,.9);
+  }
+  .ep.is-seen{color:rgba(242,234,224,.34)}
+
+  .row{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:9px 0;border-top:1px solid var(--line);
+    font-size:12px;color:var(--muted);
+  }
+  .switch{
+    width:34px;height:19px;border-radius:999px;position:relative;
+    background:rgba(242,234,224,.14);transition:.2s;flex:0 0 auto;
+  }
+  .switch::after{
+    content:"";position:absolute;top:2.5px;left:3px;width:14px;height:14px;border-radius:50%;
+    background:var(--paper);transition:.2s;
+  }
+  .switch.on{background:rgba(255,77,46,.55)}
+  .switch.on::after{left:17px;background:#fff}
+
+  .keys{margin-top:auto;display:grid;gap:6px}
+  .key-row{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted-2)}
+  .key-row kbd{
+    min-width:22px;text-align:center;
+    font-family:var(--sans);font-size:10px;padding:2px 5px;border-radius:4px;
+    background:rgba(242,234,224,.06);border:1px solid var(--line-strong);
+    color:rgba(242,234,224,.7);
+  }
+  .key-row span{margin-left:auto;color:rgba(242,234,224,.42)}
+
+  /* ---------- toast ---------- */
+  .toast{
+    position:fixed;left:50%;bottom:42px;transform:translate(-50%,24px);
+    padding:10px 18px;border-radius:10px;
+    background:rgba(16,14,12,.92);
+    border:1px solid var(--line-strong);
+    font-size:12.5px;letter-spacing:.04em;
+    opacity:0;pointer-events:none;
+    transition:opacity .22s, transform .22s;
+    backdrop-filter:blur(10px);
+    z-index:90;
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+
+  /* ---------- 画面适配：适应 / 填充 / 影院 ---------- */
+  .frame-art{transition:transform .4s cubic-bezier(.2,.8,.2,1)}
+  .screen.mode-cover .frame-art{transform:scale(1.78)}
+  .screen{transition:height .35s cubic-bezier(.2,.8,.2,1)}
+
+  .seg{
+    display:flex;align-items:center;gap:2px;padding:2px;
+    border:1px solid var(--line);border-radius:9px;
+    background:rgba(242,234,224,.03);
+  }
+  .seg .lbl{font-size:9.5px;letter-spacing:.14em;color:var(--muted-2);padding:0 8px 0 6px}
+  .seg button{font-size:11.5px;padding:4px 9px;border-radius:7px;color:var(--muted);transition:.16s}
+  .seg button:hover{color:var(--paper)}
+  .seg button.on{background:rgba(242,234,224,.11);color:var(--paper)}
+
+  body.theater .app{grid-template-columns:0 minmax(0,1fr) 0}
+  body.theater .rail,body.theater .panel{display:none}
+  body.theater .screen{height:min(86vh,820px)}
+  body.theater .topbar{border-bottom-color:transparent}
+
+  @media (max-width:1180px){
+    .app{grid-template-columns:64px minmax(0,1fr) 300px}
+  }
+  @media (max-width:980px){
+    .app{grid-template-columns:64px minmax(0,1fr)}
+    .panel{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- 左：导航 -->
+  <nav class="rail">
+    <div class="brand" title="一幕">幕</div>
+    <button class="rail-btn is-active" title="剧场">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M10 9.2v5.6l4.6-2.8z"/></svg>
+      <span>剧场</span>
+    </button>
+    <button class="rail-btn" title="追剧">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 4h12v16l-6-4.2L6 20z"/></svg>
+      <span>追剧</span>
+    </button>
+    <button class="rail-btn" title="发现">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.5"/><path d="M15.2 8.8l-1.9 4.5-4.5 1.9 1.9-4.5z"/></svg>
+      <span>发现</span>
+    </button>
+    <button class="rail-btn" title="下载">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 4v10m0 0l-3.4-3.4M12 14l3.4-3.4"/><path d="M5 17.5v1A1.5 1.5 0 006.5 20h11a1.5 1.5 0 001.5-1.5v-1"/></svg>
+      <span>下载</span>
+    </button>
+    <div class="rail-spacer"></div>
+    <button class="rail-btn" title="设置">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6"/></svg>
+      <span>设置</span>
+    </button>
+    <div class="avatar">我</div>
+  </nav>
+
+  <!-- 中：舞台 -->
+  <section class="main">
+    <header class="topbar">
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg>
+        搜索剧名、演员、题材
+        <kbd>⌘K</kbd>
+      </div>
+      <div class="crumb">剧场模式 · 竖屏原画</div>
+      <div class="top-actions">
+        <div class="seg" id="fitSeg">
+          <span class="lbl">画面</span>
+          <button data-fit="contain" class="on">适应</button>
+          <button data-fit="cover">填充</button>
+        </div>
+        <button class="ghost-btn">长辈模式</button>
+        <button class="ghost-btn" data-act="theater">影院 T</button>
+        <button class="ghost-btn" data-act="pip">置顶小窗</button>
+      </div>
+    </header>
+
+    <div class="stage">
+      <div class="ambient"></div>
+
+      <div class="screen" id="screen">
+        <div class="beam"></div>
+
+        <div class="frame-art">
+          <div class="mark">一 幕 剧 场</div>
+          <div class="bignum" id="bigEp">第 12 集</div>
+          <div class="line"></div>
+          <div class="note">9 : 16 竖屏原画 · 居中不裁切<br/>两侧留白由环境光填充</div>
+        </div>
+
+        <div class="hud">
+          <div class="hud-top">
+            <div class="pill live"><b>●</b> 正在播放</div>
+            <div class="pill">1080P</div>
+            <div class="hud-spacer"></div>
+            <div class="pill">🔊 100%</div>
+          </div>
+
+          <div class="hud-bottom">
+            <div class="now-title" id="nowTitle">总裁的替身新娘</div>
+            <div class="now-sub">
+              <span id="nowEp">第 12 集 · 婚礼当天的真相</span>
+              <span class="dot"></span>
+              <span>共 68 集</span>
+              <span class="dot"></span>
+              <span>都市 · 逆袭 · 甜宠</span>
+            </div>
+
+            <div class="track" id="track">
+              <div class="track-bg"></div>
+              <div class="track-fill" id="fill"></div>
+              <div class="track-head" id="head"></div>
+            </div>
+
+            <div class="controls">
+              <button class="ctrl" data-act="prev" title="上一集 (↑)">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M8.5 12 18 5.5v13z"/><rect x="4.6" y="5.5" width="2.1" height="13" rx="1"/></svg>
+              </button>
+              <button class="ctrl play" data-act="play" id="playBtn" title="播放 / 暂停 (空格)">
+                <svg id="playIcon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.6 19.5 12 7 19.4z"/></svg>
+              </button>
+              <button class="ctrl" data-act="next" title="下一集 (↓)">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 12 6 5.5v13z"/><rect x="17.3" y="5.5" width="2.1" height="13" rx="1"/></svg>
+              </button>
+              <div class="time" id="time">08:42 / 24:10</div>
+              <button class="speed" data-act="speed">1.0×</button>
+              <div class="hud-spacer"></div>
+              <button class="ctrl" data-act="speedup" title="长按 3 倍速">≫</button>
+              <button class="ctrl" data-act="pip" title="置顶小窗 (P)">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><rect x="12" y="11.5" width="6.5" height="5.5" rx="1.2" fill="currentColor" stroke="none"/></svg>
+              </button>
+              <button class="ctrl" data-act="full" title="全屏 (F)">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 9V5.5A1.5 1.5 0 015.5 4H9M15 4h3.5A1.5 1.5 0 0120 5.5V9M20 15v3.5A1.5 1.5 0 0118.5 20H15M9 20H5.5A1.5 1.5 0 014 18.5V15"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 右：信息栏 -->
+  <aside class="panel">
+    <div>
+      <h1 class="p-title"><small>正在观看</small>总裁的替身新娘</h1>
+      <div class="tags" style="margin-top:10px">
+        <span class="tag">都市</span>
+        <span class="tag">逆袭</span>
+        <span class="tag">甜宠</span>
+        <span class="tag">2026</span>
+      </div>
+      <p class="p-desc" style="margin-top:12px">
+        她替姐姐嫁入豪门，却发现新郎早已知道一切。第 12 集，婚礼当天的真相即将揭开……
+      </p>
+    </div>
+
+    <div>
+      <div class="section-head">
+        <b>选集</b>
+        <span class="count" id="epCount">68 集</span>
+      </div>
+      <div class="eps" id="eps" style="margin-top:10px"></div>
+    </div>
+
+    <div>
+      <div class="row">
+        <span>自动连播下一集</span>
+        <div class="switch on" data-toggle></div>
+      </div>
+      <div class="row">
+        <span>记住观看进度</span>
+        <div class="switch on" data-toggle></div>
+      </div>
+      <div class="row">
+        <span>环境光</span>
+        <div class="switch on" data-toggle></div>
+      </div>
+    </div>
+
+    <div class="keys">
+      <div class="key-row"><kbd>空格</kbd><span>播放 / 暂停</span></div>
+      <div class="key-row"><kbd>↑</kbd><kbd>↓</kbd><span>上一集 / 下一集</span></div>
+      <div class="key-row"><kbd>←</kbd><kbd>→</kbd><span>快退 / 快进 10 秒</span></div>
+      <div class="key-row"><kbd>F</kbd><kbd>P</kbd><span>全屏 / 置顶小窗</span></div>
+      <div class="key-row"><kbd>T</kbd><kbd>C</kbd><span>影院 / 适应·填充</span></div>
+      <div class="key-row"><kbd>滚轮</kbd><span>上下滑动切集</span></div>
+    </div>
+  </aside>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  var TOTAL = 68, TOTAL_SEC = 1450; // 24:10
+  var state = { ep: 12, playing: false, pos: 0.34 };
+
+  var $ = function(s){ return document.querySelector(s); };
+  var epsEl = $('#eps'), fill = $('#fill'), head = $('#head'),
+      playBtn = $('#playBtn'), playIcon = $('#playIcon'),
+      timeEl = $('#time'), toastEl = $('#toast'),
+      bigEp = $('#bigEp'), nowEp = $('#nowEp');
+
+  /* 选集网格 */
+  for (var i = 1; i <= TOTAL; i++) {
+    var b = document.createElement('button');
+    b.className = 'ep' + (i < state.ep ? ' is-seen' : '') + (i === state.ep ? ' is-active' : '');
+    b.textContent = i;
+    b.dataset.ep = i;
+    epsEl.appendChild(b);
+  }
+  var activeEl = epsEl.querySelector('.is-active');
+
+  function fmt(s){
+    var m = Math.floor(s / 60), r = Math.floor(s % 60);
+    return (m < 10 ? '0' : '') + m + ':' + (r < 10 ? '0' : '') + r;
+  }
+
+  function paint(){
+    var pct = Math.min(100, Math.max(0, state.pos * 100));
+    fill.style.width = pct + '%';
+    head.style.left = pct + '%';
+    var cur = state.pos * TOTAL_SEC;
+    timeEl.textContent = fmt(cur) + ' / ' + fmt(TOTAL_SEC);
+    bigEp.textContent = '第 ' + state.ep + ' 集';
+    nowEp.textContent = '第 ' + state.ep + ' 集 · 婚礼当天的真相';
+  }
+
+  function setEp(n, silent){
+    n = Math.min(TOTAL, Math.max(1, n));
+    if (n === state.ep) return;
+    var prev = epsEl.querySelector('.is-active');
+    if (prev) { prev.classList.remove('is-active'); prev.classList.add('is-seen'); }
+    state.ep = n;
+    var next = epsEl.querySelector('[data-ep="' + n + '"]');
+    if (next) {
+      next.classList.remove('is-seen');
+      next.classList.add('is-active');
+      next.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    state.pos = 0;
+    paint();
+    if (!silent) toast('已切换到第 ' + n + ' 集');
+  }
+
+  function togglePlay(){
+    state.playing = !state.playing;
+    playIcon.innerHTML = state.playing
+      ? '<rect x="6.5" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.9" y="5" width="3.6" height="14" rx="1.2"/>'
+      : '<path d="M7 4.6 19.5 12 7 19.4z"/>';
+    toast(state.playing ? '播放' : '暂停');
+  }
+
+  var toastTimer;
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 1400);
+  }
+
+  /* 画面适配 */
+  var screenEl = $('#screen');
+  function setFit(mode){
+    screenEl.classList.toggle('mode-cover', mode === 'cover');
+    var btns = document.querySelectorAll('[data-fit]');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('on', btns[i].dataset.fit === mode);
+    }
+    toast(mode === 'cover' ? '填充：画面放大铺满，双击复位' : '适应：完整画面，两侧留白');
+  }
+  function toggleTheater(){
+    var on = document.body.classList.toggle('theater');
+    toast(on ? '影院模式：侧栏收起，画面最大化' : '退出影院模式');
+  }
+
+  /* 事件 */
+  epsEl.addEventListener('click', function(e){
+    var b = e.target.closest('.ep');
+    if (b) setEp(Number(b.dataset.ep));
+  });
+
+  document.addEventListener('click', function(e){
+    var t = e.target.closest('[data-act]');
+    if (t) {
+      var act = t.dataset.act;
+      if (act === 'play') togglePlay();
+      if (act === 'prev') setEp(state.ep - 1);
+      if (act === 'next') setEp(state.ep + 1);
+      if (act === 'pip') toast('置顶小窗：320 × 568 · 始终置顶');
+      if (act === 'full') toast('全屏：竖屏居中，背景环境光');
+      if (act === 'speed') toast('倍速：1.0× → 1.25× → 1.5× → 2.0×');
+      if (act === 'speedup') toast('长按 3.0× 快进');
+      if (act === 'theater') toggleTheater();
+      return;
+    }
+    var fb = e.target.closest('[data-fit]');
+    if (fb) { setFit(fb.dataset.fit); return; }
+    var sw = e.target.closest('[data-toggle]');
+    if (sw) sw.classList.toggle('on');
+  });
+
+  $('#track').addEventListener('click', function(e){
+    var r = this.getBoundingClientRect();
+    state.pos = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    paint();
+  });
+
+  var SPEEDS = [1, 1.25, 1.5, 2], si = 0;
+  document.querySelector('[data-act="speed"]').addEventListener('click', function(){
+    si = (si + 1) % SPEEDS.length;
+    this.textContent = SPEEDS[si] + '×';
+  });
+
+  document.addEventListener('keydown', function(e){
+    if (e.target.tagName === 'INPUT') return;
+    var k = e.key;
+    if (k === ' ') { e.preventDefault(); togglePlay(); }
+    else if (k === 'ArrowUp') { e.preventDefault(); setEp(state.ep - 1); }
+    else if (k === 'ArrowDown') { e.preventDefault(); setEp(state.ep + 1); }
+    else if (k === 'ArrowLeft') { state.pos = Math.max(0, state.pos - 10 / TOTAL_SEC); paint(); }
+    else if (k === 'ArrowRight') { state.pos = Math.min(1, state.pos + 10 / TOTAL_SEC); paint(); }
+    else if (k === 'f' || k === 'F') toast('全屏');
+    else if (k === 'p' || k === 'P') toast('置顶小窗');
+    else if (k === 't' || k === 'T') toggleTheater();
+    else if (k === 'c' || k === 'C') setFit(screenEl.classList.contains('mode-cover') ? 'contain' : 'cover');
+  });
+
+  /* 滚轮切集 */
+  var lock = false;
+  window.addEventListener('wheel', function(e){
+    if (lock || Math.abs(e.deltaY) < 12) return;
+    if (e.target.closest && e.target.closest('.eps')) return;
+    lock = true;
+    setEp(state.ep + (e.deltaY > 0 ? 1 : -1));
+    setTimeout(function(){ lock = false; }, 420);
+  }, { passive: true });
+
+  /* 播放计时 */
+  setInterval(function(){
+    if (!state.playing) return;
+    state.pos += 0.6 / TOTAL_SEC;
+    if (state.pos >= 1) { setEp(state.ep + 1); }
+    paint();
+  }, 600);
+
+  paint();
+})();
+</script>
+</body>
+</html>
