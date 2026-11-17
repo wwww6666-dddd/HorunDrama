@@ -1,13 +1,13 @@
 # 交接文档（给下一个 AI）
 
-> 更新时间：2026-11-17 11:10（Asia/Shanghai）
+> 更新时间：2026-11-17 12:20（Asia/Shanghai）
 > 项目：`D:\红果短剧`
-> 当前版本：**1.1.2**（代码里已含"自动下一集"修复，**还没打包**成 1.1.3）
+> 当前版本：**1.1.3**（已打包，已开源）
+> 开源仓库：<https://github.com/wwww6666-dddd/HorunDrama>（public，**GPL-3.0**）
 > 产物：
-> - 安装器 `apps/desktop/release/HorunDrama Setup 1.1.2.exe`（138MB，NSIS one-click，未签名）
-> - 绿色包 `apps/desktop/release/HorunDrama-1.1.2-win64-portable.zip`（180MB）
-> 当前**未解决**的问题：无。**自动下一集已找到真因并修好**（见第 5 节），
-> 剩下的只是"重新打包 1.1.3"。
+> - 安装器 `apps/desktop/release/HorunDrama Setup 1.1.3.exe`（138MB，NSIS one-click，未签名）
+> - 绿色包 `apps/desktop/release/HorunDrama-1.1.3-win64-portable.zip`（180MB）
+> 当前**未解决**的问题：无。自动下一集、进度条可拖、分享续播、关于页/更新/反馈都已完成。
 
 这篇写的是**当前真实状态**。旧交接里过时的结论（对标账号=用户抖音号、0.29.1、1.0.0 打包、
 "高清靠限流自愈"等）都不要再照做。
@@ -147,6 +147,35 @@ tar -a -c -f release\HorunDrama-1.1.2-win64-portable.zip -C release\win-unpacked
 - 闲置 2.6s 自动隐藏操作栏 + 控制条（弹幕保留），鼠标移动恢复（`data-chrome-hidden`）；
 - 画中画：保留同一个 `<video>` 元素，切集换 `media.src`（不销毁播放器），PiP 不会被打断；
   `navigator.mediaSession` 支持 next/prev/play/pause。
+
+### 分享续播（`src/share.ts` + `ui/ShareDialog.tsx`，2026-11-17 新增）
+
+播放页右侧「分享」/ 顶栏「分享续播」都打开同一个弹窗，两个方向：
+
+1. **复制**：生成红果官方形态的分享链接（`…/video-animation-share?video_id=<剧>&vid=<集>`），
+   额外挂 `no`（集号）和 `t`（秒）；红果网页忽略这两个参数，本软件读到就能从那一秒续播。
+2. **解析**：粘贴别人发的红果链接 → 拉 `/api/series/<剧>` 补齐集号 → **先弹影片卡片**
+   （封面/剧名/第几集/共几集/从哪开始）→ 点「开始观看」才跳 `#/play/…?t=…`。
+
+**参数含义千万别搞反**（踩过）：官方链接里 `video_id` 是**剧**、`vid`/`share_toast_vid` 才是**集**，
+而且**没有 `book_id`**。老式链接才是 `book_id`=剧 + `video_id`=集。解析器两种都兼容，
+只有剧号时挑"上次看到的那一集"，只有集号时直接报错（反查不了剧）。
+
+播放页 `#/play/<sid>/<eid>/<no>?t=41.5` 里的 `t` 只认一次（`shareSeekUsed` ref），
+否则换清晰度/重取流会把用户拽回分享点。
+
+复制走 `yimu.copyText` → main 进程 `clipboard.writeText`（窗口没焦点时渲染进程的
+`navigator.clipboard` 会被拒），浏览器里退回 `navigator.clipboard`，再不行选中文本提示 Ctrl+C。
+
+### 关于页 / 更新 / 反馈（`src/app-info.ts`）
+
+- `GITHUB_REPO = 'wwww6666-dddd/HorunDrama'`，派生 `GITHUB_URL` / `RELEASES_URL` / `FEEDBACK_URL` /
+  `UPDATE_API_URL`；改仓库只改这一处（core 里没有第二份）。
+- 「检查更新」前端直接查 GitHub Releases API（`api.github.com` 允许跨域），`compareVersion` 比版本；
+  仓库还没发 release 时返回 404，界面显示"仓库还没有发布版本"。
+- 外链一律 `openExternalUrl()` → `yimu.openExternal` → main 的 `shell.openExternal`（只放行 http/https）。
+  **不要**在渲染进程里 `location.href = 外链`，会把应用本身导航走。
+- 版本号只有一个来源：`apps/desktop/package.json` → `vite define __APP_VERSION__` → `app-info.ts`。
 
 ### 账号 / 评论 / 弹幕
 手机号登录、签到、评论列表/回复/点赞/删除、弹幕拉取与发送都有实现；
@@ -395,6 +424,14 @@ node .tmp\probe-cenc.mjs                   # 解析 CENC 盒结构（schm/tenc/K
     这类弹层必须 `createPortal` 到 `body` + `position: fixed`（参考 `ui/Select.tsx`，
     它有"先藏在屏幕外量宽高 → 右对齐 → 下方放不下就向上"的完整实现）。
 45. 弹层下面放不下时要**向上展开**，否则页面底部的下拉会被视口底边切掉。
+46. **红果官方分享链接的参数别搞反**：`video_id` = 剧（book）、`vid`/`share_toast_vid` = 集，
+    而且**没有** `book_id`；只有老式链接才是 `book_id`=剧 + `video_id`=集。
+    实测：`video_id=7687938296130833470` → 469 集的剧，`vid=7687958768876784665` → 第 3 集。
+    改解析逻辑前先拿真实链接跑一遍 `.tmp/probe-real-share.mjs`。
+47. **渲染进程里不要 `location.href = 外链`**（会把应用导航走），也不要指望
+    `navigator.clipboard`（窗口没焦点就 `NotAllowedError`）。一律走 preload：
+    外链 `yimu.openExternal`（main 里 `shell.openExternal`，只放行 http/https）、
+    剪贴板 `yimu.copyText`（main 的 `clipboard.writeText`）。
 
 ---
 
@@ -415,6 +452,8 @@ node .tmp\probe-cenc.mjs                   # 解析 CENC 盒结构（schm/tenc/K
 | 设置 | `apps/core/src/store/settings.ts` + `views/Settings.tsx`（关于页在这里） |
 | 下拉组件 | `apps/web-next/src/ui/Select.tsx`（portal + fixed，改之前先看第 8.8 节 38 条） |
 | 版本 / 作者 | `apps/web-next/vite.config.ts`（`define.__APP_VERSION__`）+ `src/app-info.ts` |
+| 分享续播 | `apps/web-next/src/share.ts`（链接生成/解析）+ `ui/ShareDialog.tsx` |
+| 外链 / 剪贴板 | `apps/desktop/main.cjs`（`yimu:open-external` / `yimu:copy-text`）+ `preload.cjs` + `src/shell.d.ts` |
 | 打赏 | `apps/web-next/src/ui/RewardDialog.tsx` + `design/reward.css` + `public/reward/` |
 | 打包 | `apps/desktop/package.json`（build 段）、`main.cjs`（数据目录）、`resources/使用说明.txt` |
 
@@ -432,15 +471,33 @@ node .tmp\probe-cenc.mjs                   # 解析 CENC 盒结构（schm/tenc/K
 
 ## 11. 下一个 AI 的建议顺序
 
-1. **打包 1.1.3**：代码里"自动下一集"的修复已经验证完（第 5 节），只是还没出包。
-   改 `apps/desktop/package.json` 的 `version`，按第 0 节准备 electron 缓存后
-   `pnpm --filter @horun/desktop run dist` + 绿色包，再用
-   `.tmp/probe-rounds.mjs` / `.tmp/probe-natural.mjs` 在**打包版（CDP 9444）**上连测两轮以上。
-2. 回归一遍其它近期改动：清晰度默认 1080p + 降级、预加载、全屏操作栏/闲置隐藏、画中画、
-   打赏弹窗、便携模式数据目录。
-3. 若要继续提升体验：把 `x-medusa` 也对齐客户端（现在能用但与客户端不是逐字节一致），
-   或做 MSE+ClearKey 直连播加密源（注意第 4.3 节：上游是非分片 mp4，走不通，需要先转 fMP4）。
+1. **发版流程（1.1.4 及以后）**：改 `apps/desktop/package.json` 的 `version` →
+   `pnpm --filter @horun/web-next run build` → 按第 0 节准备 electron 缓存 →
+   `pnpm --filter @horun/desktop run dist` → 绿色包（`portable.txt` + `使用说明.txt` + `tar -a -c -f`）→
+   `gh release create vX.Y.Z <两个产物> -R wwww6666-dddd/HorunDrama`（**必须带 `-R`**：
+   主仓库没有 remote，不带会报 `no git remotes found`）。
+2. 开源仓库的更新方式：它只含**当前快照**（不带本项目的历史）。发版后同步一次：
+   把改动复制进快照目录（见 §13），`git add -A && git commit && git push`。
+3. 回归一遍其它近期改动：清晰度默认 1080p/等文件再播、预加载、全屏操作栏/闲置隐藏、画中画、
+   分享续播、打赏弹窗、便携模式数据目录。
 4. 任何"上游 200 + 0"的情况，先怀疑签名，再怀疑限流。
+
+---
+
+## 13. 开源仓库（GitHub）
+
+- <https://github.com/wwww6666-dddd/HorunDrama>（public，**GPL-3.0**，main 分支）
+- 内容：源码 + `docs/*.md` + `LICENSE` + `NOTICE.md` + `README.md` + 锁文件 + 一张截图，
+  **176 个文件 / 约 3.2MB**；打赏二维码是占位图。
+- 剔除（故意不入库）：`.tools/`（Go 工具链 1.4 万文件）、`data/`、`release/`、`.tmp/`、`.research/`、
+  `node_modules`、`dist`、`docs/screenshots`（51MB）、`resources/{ffmpeg,hgsigner,launcher}/*.exe`、
+  `apps/desktop/vendor/openhongguo`。
+- 维护方式：本地快照目录 `D:\horundrama-oss` 是那份仓库的克隆副本，改动后用
+  `robocopy` 从主仓库同步（排除同上清单），再 `git commit && git push`。
+- LICENSE 文本取自 SPDX（`gh api repos/spdx/license-list-data/contents/text/GPL-3.0-only.txt`），
+  本机连不上 gnu.org / raw.githubusercontent。
+- **注意**：`docs/` 里含大量协议/签名/逆向记录（`进度.md`、`对标逆向-架构与登录.md`）。
+  公开发布前如需保守，可把这几份移出仓库（README 里说明"内部文档不公开"）。
 
 ---
 
@@ -465,3 +522,5 @@ node .tmp\probe-cenc.mjs                   # 解析 CENC 盒结构（schm/tenc/K
 | `probe-load.mjs <url>` | 只加载页面确认能起播（不 seek、不触发切集） |
 | `probe-select.mjs` / `probe-select-long.mjs` | 下拉是否被卡片遮住：对每个选项做 `elementFromPoint`、检查是否向上展开/右对齐/裁字 |
 | `probe-wait.mjs <集号>` | 「等准备好再播」：等待层文案/进度 → 是否播本地文件、时长是否已知 → 拖到 60s 是否生效 |
+| `probe-share.mjs` | 分享续播：复制本集链接（带 no/t）→ 粘贴解析 → 跳转并从那一秒续播 |
+| `probe-real-share.mjs` | 用真实红果链接验证：解析 → 影片卡片 → 开始观看 → 起播 |
