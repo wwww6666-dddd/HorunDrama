@@ -2,7 +2,7 @@
  * 账号写操作：收藏 / 点赞 / 预约 / 观看进度上传。
  *
  * 这些接口都要「会话 Cookie + 账号设备 + hgsigner 签名」；body 用 JSON（
- * 对标端会再 gzip，但实测未压缩也接受）。收藏/预约在 sinfonlinea，
+ * 官方客户端会再 gzip，但实测未压缩也接受）。收藏/预约在 sinfonlinea，
  * 观看历史/进度在 lq。
  */
 import { createLogger } from '../util/log.ts';
@@ -274,8 +274,8 @@ export interface CommentSendResult extends WriteResult {
 }
 
 /**
- * 发短剧评论（对标 SendComment → /novel/commentapi/comment/add/v1/）。
- * 对标 body：commit_source=3, data_type=4, offset=0。
+ * 发短剧评论（参考 SendComment → /novel/commentapi/comment/add/v1/）。
+ * 参考 body：commit_source=3, data_type=4, offset=0。
  */
 export async function accountSendComment(input: {
   seriesId: string;
@@ -309,7 +309,7 @@ export async function accountSendComment(input: {
 }
 
 /**
- * 发弹幕（对标 SendDanmaku → 同一 add 接口，data_type=20, commit_source=1500）。
+ * 发弹幕（参考 SendDanmaku → 同一 add 接口，data_type=20, commit_source=1500）。
  * offsetMs 是视频内时间（毫秒）。
  */
 export async function accountSendDanmaku(input: {
@@ -342,7 +342,7 @@ export async function accountSendDanmaku(input: {
   return { ...result, commentId: extractCommentId(result.data) };
 }
 
-/** 删除自己发的评论/弹幕（对标 DeleteComment）；实测评论 data_type=4 可删。 */
+/** 删除自己发的评论/弹幕（参考 DeleteComment）；实测评论 data_type=4 可删。 */
 export function accountDeleteComment(input: {
   commentId: string;
   episodeId: string;
@@ -358,7 +358,7 @@ export function accountDeleteComment(input: {
   });
 }
 
-/** 评论点赞/取消（对标 LikeComment：action_type 8=赞 9=取消）。 */
+/** 评论点赞/取消（参考 LikeComment：action_type 8=赞 9=取消）。 */
 export function accountLikeComment(commentId: string, liked: boolean): Promise<WriteResult> {
   return signedPost(CONTENT_HOST, '/novel/commentapi/comment/do_action/v1/', {
     action_type: liked ? 8 : 9,

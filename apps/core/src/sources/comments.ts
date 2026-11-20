@@ -1,7 +1,7 @@
 /**
  * 短剧评论列表。
  *
- * 对标实现：Comments(seriesId, episodeId, cursor) → POST
+ * 参考实现：Comments(seriesId, episodeId, cursor) → POST
  * /novel/commentapi/comment/list/<episodeId>/v1/（lq 主机），body 里带
  * book_id/playlet_item_duration/start_offset_time/group_id/comment_type 等。
  */
@@ -229,7 +229,7 @@ export function fetchComments(input: {  seriesId: string;
   });
 }
 
-/** 评论回复列表（对标 Replies → /commentapi/reply/list/<commentId>/v1/）。 */
+/** 评论回复列表（参考 Replies → /commentapi/reply/list/<commentId>/v1/）。 */
 export function fetchReplies(input: {
   seriesId: string;
   episodeId: string;

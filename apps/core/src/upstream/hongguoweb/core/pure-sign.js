@@ -860,7 +860,7 @@ function buildMedusa(url, body, khronos, deviceId, version) {
 
 /**
  * helios：md5(le32(random) + ascii('8662')) -> 64 位字表 -> 34 轮扩展 -> 分组类 Feistel。
- * 明文格式是 `ts-<license>-8662`；license = 646637794，由反编译对标客户端得到，
+ * 明文格式是 `ts-<license>-8662`；license = 646637794，由反编译官方客户端得到，
  * 并用它真实的 x-helios 做过逐字节对齐验证。
  */
 function helios(khronos) {

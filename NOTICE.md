@@ -10,8 +10,14 @@
 | Electron | MIT | 桌面运行时 |
 | React / Vite / zustand | MIT | 前端 |
 | FFmpeg | LGPL / GPL（取决于编译选项） | 打包时放入 `resources/ffmpeg`，二进制不入库 |
+| hgsigner | 见其仓库/构建说明 | 打包时放入 `resources/hgsigner`，仅本机回环调用 |
+| ttEncrypt（`playback-device.js` 内） | **源自 GPL-3.0 项目** | 见 [docs/第三方许可与安全审计.md](docs/第三方许可与安全审计.md) |
 
 GPL-3.0 的部分源自本项目对上游协议兼容性实现的需要；分发时请保留上述许可证文件。
+
+2.0.0 起项目**不随包分发任何字体文件**，界面只使用操作系统自带字体（Microsoft YaHei /
+PingFang SC / Noto Sans SC / system-ui / Songti SC 等），无字体授权与包体积问题。
+完整依赖许可与漏洞扫描结果见 [docs/第三方许可与安全审计.md](docs/第三方许可与安全审计.md)。
 
 资源：`apps/web-next/public/reward/*.jpg` 是**占位图**，请替换成自己的收款码再分发。
 

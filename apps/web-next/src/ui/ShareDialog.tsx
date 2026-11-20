@@ -2,8 +2,10 @@
  * 「分享续播」弹窗。
  *
  * 两个方向：
- *  1. 复制**红果原链接**（book_id/video_id，另挂 no/t 给本软件解析；红果网页会忽略这两个参数）；
- *  2. 粘贴别人分享的红果链接 → 解析出剧/集/秒 → 直接跳过去续播（链接没带 t 就按本地进度）。
+ *  1. 复制**红果原链接**（官方参数 video_id=剧、vid=集，另挂 no/t 给本软件解析；
+ *     红果网页会忽略这两个参数）；
+ *  2. 粘贴别人分享的红果链接 → 解析 → 先弹一张影片卡片确认（剧名/封面/第几集/从哪开始）
+ *     → 点「开始观看」才跳转，不会糊里糊涂跳走。
  */
 import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
@@ -13,6 +15,17 @@ import { playHash, parsePlay } from '../routes.ts';
 import { useApp } from '../store.ts';
 import { hongguoShareLink, parseSharedLink } from '../share.ts';
 
+/** 解析出来的待观看目标（先给用户看一眼再跳） */
+interface Preview {
+  seriesId: string;
+  episodeId: string;
+  no: number;
+  startAt: number;
+  title: string;
+  cover: string;
+  episodeCount: number;
+}
+
 export function ShareDialog(): JSX.Element | null {
   const open = useApp((s) => s.shareOpen);
   const closeShare = useApp((s) => s.closeShare);
@@ -20,6 +33,7 @@ export function ShareDialog(): JSX.Element | null {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [preview, setPreview] = useState<Preview | null>(null);
   /** 「当前这一集」那个只读输入框：复制被拒时用它兜底选中 */
   const linkRef = useRef<HTMLInputElement | null>(null);
   /** 当前播放页信息（在播放页打开时才能"分享这一集"） */
@@ -36,6 +50,7 @@ export function ShareDialog(): JSX.Element | null {
     setText('');
     setNote('');
     setCopied(false);
+    setPreview(null);
   }, [open]);
 
   useEffect(() => {
@@ -66,30 +81,59 @@ export function ShareDialog(): JSX.Element | null {
     });
   };
 
-  const openShared = async (): Promise<void> => {
+  /** 解析链接 → 补齐剧集信息 → 弹卡片（不跳转） */
+  const resolveShared = async (): Promise<void> => {
     const parsed = parseSharedLink(text);
     if (parsed === null) {
-      setNote('认不出这个链接。请粘贴红果 App 里「分享 → 复制链接」得到的那条。');
+      setPreview(null);
+      setNote('认不出这个链接。红果分享链接形如 …video-animation-share?video_id=剧号&vid=集号，请整条粘进来。');
       return;
     }
     setBusy(true);
     setNote('');
     try {
+      const detail = await api.series(parsed.seriesId);
+      let episodeId = parsed.episodeId;
       let no = parsed.no;
-      if (no <= 0) {
-        // 链接里没带集号：拿剧集列表按 episodeId 反查
-        const detail = await api.series(parsed.seriesId);
-        const hit = detail.episodes.find((ep) => ep.episodeId === parsed.episodeId);
-        if (hit === undefined) throw new Error('这部剧里找不到这一集（可能已下架）');
-        no = hit.no;
+      let startAt = parsed.startAt;
+      if (episodeId === '' || no <= 0) {
+        if (episodeId === '') {
+          // 分享的是整部剧：优先"上次看到的那一集"，否则第一集
+          const resume = await api.progressFor(parsed.seriesId).catch(() => null);
+          const picked =
+            (resume === null ? undefined : detail.episodes.find((ep) => ep.episodeId === resume.episodeId)) ??
+            detail.episodes[0];
+          if (picked === undefined) throw new Error('这部剧暂时没有可播放的集');
+          episodeId = picked.episodeId;
+          no = picked.no;
+          if (startAt <= 0 && resume !== null && resume.episodeId === picked.episodeId) startAt = resume.positionSec;
+        } else {
+          const hit = detail.episodes.find((ep) => ep.episodeId === episodeId);
+          if (hit === undefined) throw new Error('这部剧里找不到这一集（可能已下架）');
+          no = hit.no;
+        }
       }
-      closeShare();
-      location.hash = playHash(parsed.seriesId, parsed.episodeId, no, parsed.startAt);
+      setPreview({
+        seriesId: parsed.seriesId,
+        episodeId,
+        no,
+        startAt,
+        title: detail.drama.title,
+        cover: detail.drama.cover,
+        episodeCount: detail.episodes.length,
+      });
     } catch (err) {
-      setNote(`打开失败：${(err as Error).message}`);
+      setPreview(null);
+      setNote(`解析失败：${(err as Error).message}`);
     } finally {
       setBusy(false);
     }
+  };
+
+  const startWatch = (): void => {
+    if (preview === null) return;
+    closeShare();
+    location.hash = playHash(preview.seriesId, preview.episodeId, preview.no, preview.startAt);
   };
 
   const currentLink =
@@ -103,7 +147,7 @@ export function ShareDialog(): JSX.Element | null {
           <div>
             <h2 className="sharedlg__title">分享续播</h2>
             <p className="sharedlg__sub">
-              分享的是红果原链接；对方把链接粘回这里，就能从你看到的这一秒接着播。
+              分享出去的是红果原链接；把别人发的链接粘回来，先给你看是哪部剧、第几集、从哪开始，再决定要不要看。
             </p>
           </div>
           <button className="sharedlg__close" onClick={closeShare} aria-label="关闭">
@@ -142,21 +186,46 @@ export function ShareDialog(): JSX.Element | null {
           <div className="sharedlg__row">
             <input
               className="sharedlg__input"
-              placeholder="粘贴红果分享链接，或 #/play/… 链接"
+              placeholder="粘贴红果分享链接（…video-animation-share?video_id=…&vid=…）"
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value);
+                setPreview(null);
+              }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') void openShared();
+                if (e.key === 'Enter') void resolveShared();
               }}
             />
             <button
               className="sharedlg__btn sharedlg__btn--primary"
               disabled={busy || text.trim() === ''}
-              onClick={() => void openShared()}
+              onClick={() => void resolveShared()}
             >
-              {busy ? '打开中…' : '打开并续播'}
+              {busy ? '解析中…' : '解析链接'}
             </button>
           </div>
+
+          {preview !== null && (
+            <div className="sharedlg__preview">
+              {preview.cover !== '' && (
+                <img className="sharedlg__cover" src={preview.cover} alt="" loading="lazy" />
+              )}
+              <div className="sharedlg__preview-main">
+                <p className="sharedlg__preview-title">{preview.title}</p>
+                <p className="sharedlg__preview-meta">
+                  第 {preview.no} 集 / 共 {preview.episodeCount} 集 · {fmt(preview.startAt)}
+                </p>
+                <div className="sharedlg__preview-actions">
+                  <button className="sharedlg__btn sharedlg__btn--primary" onClick={startWatch}>
+                    开始观看
+                  </button>
+                  <button className="sharedlg__btn" onClick={() => setPreview(null)}>
+                    换一个
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
         {note !== '' && <p className="sharedlg__note">{note}</p>}
@@ -172,5 +241,5 @@ function fmt(sec: number): string {
   const total = Math.floor(sec);
   const m = Math.floor(total / 60);
   const s = total % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `从 ${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')} 开始`;
 }

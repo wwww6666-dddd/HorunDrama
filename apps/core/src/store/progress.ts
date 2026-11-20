@@ -222,7 +222,7 @@ export function isFavorite(seriesId: string): boolean {
   return db.prepare('SELECT 1 FROM favorite WHERE series_id = ?').get(seriesId) !== undefined;
 }
 
-// ---------------- 点赞（本地，对标 local_like） ----------------
+// ---------------- 点赞（本地，参考 local_like） ----------------
 
 export interface LikeRow {
   seriesId: string;

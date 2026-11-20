@@ -97,13 +97,6 @@ export const IconSettings = (p: IconProps): JSX.Element => (
   </Svg>
 );
 
-export const IconMini = (p: IconProps): JSX.Element => (
-  <Svg {...p}>
-    <rect x="3" y="5" width="18" height="14" rx="3" />
-    <rect x="12" y="11" width="7" height="6" rx="1.6" />
-  </Svg>
-);
-
 export const IconShare = (p: IconProps): JSX.Element => (
   <Svg {...p}>
     <path d="M8.5 12.5l7-3.4" />
@@ -159,23 +152,6 @@ export const IconPause = (p: IconProps): JSX.Element => (
   <Svg {...p}>
     <rect x="7" y="5.5" width="3.4" height="13" rx="1.2" fill="currentColor" stroke="none" />
     <rect x="13.6" y="5.5" width="3.4" height="13" rx="1.2" fill="currentColor" stroke="none" />
-  </Svg>
-);
-
-export const IconVolume = (p: IconProps): JSX.Element => (
-  <Svg {...p}>
-    <path d="M4 10v4h3l4 3.5v-11L7 10z" />
-    <path d="M15 9.5a3.5 3.5 0 0 1 0 5" />
-    <path d="M17.5 7a7 7 0 0 1 0 10" />
-  </Svg>
-);
-
-export const IconFullscreen = (p: IconProps): JSX.Element => (
-  <Svg {...p}>
-    <path d="M4 9V4h5" />
-    <path d="M20 9V4h-5" />
-    <path d="M4 15v5h5" />
-    <path d="M20 15v5h-5" />
   </Svg>
 );
 

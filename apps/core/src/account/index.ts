@@ -1,31 +1,13 @@
 /**
- * 账号能力：状态 / 从对标客户端导入登录态 / 校验 / 扫码登录（协议已实现）。
+ * 账号能力：状态 / 会话校验 / 扫码登录（协议已实现）。
  *
  * 关于扫码：`passport/web/*` 需要「App 签名 + passport csrf」的完整握手，
  * 在部分网络下上游直接返回 error_code 16（该应用无权限）——这里如实把上游
  * 错误透出，不做静默失败。
  */
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
-import { DATA_ROOT } from '../config.ts';
-import { createLogger } from '../util/log.ts';
 import { fetchAccountProfile } from './profile.ts';
-import {
-  clearSession,
-  cookieCount,
-  mergeCookie,
-  readDevice,
-  readSession,
-  writeDevice,
-  writeSession,
-  type SessionProfile,
-} from './session.ts';
+import { clearSession, cookieCount, readDevice, readSession } from './session.ts';
 
-const log = createLogger('account');
-
-const BENCHMARK_DB = path.join(process.env.APPDATA ?? os.homedir(), 'hgplayer', 'hgplayer.db');
 const ACCOUNT_HOST = 'https://api5-normal-sinfonlinea.fqnovel.com';
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -140,87 +122,6 @@ export async function verifySession(): Promise<{ ok: boolean; code: number; mess
   } catch (err) {
     return { ok: false, code: -5, message: (err as Error).message };
   }
-}
-
-/** 从对标客户端（hgplayer.db）导入登录态：设备 + Cookie + 资料。 */
-export async function importFromBenchmark(dbPath = BENCHMARK_DB): Promise<{
-  ok: boolean;
-  message: string;
-  profile?: SessionProfile;
-  cookieCount?: number;
-}> {
-  log.info(`对标库路径: ${dbPath} 主库存在=${String(fs.existsSync(dbPath))}`);
-  if (!fs.existsSync(dbPath)) {
-    return { ok: false, message: `找不到对标客户端数据库：${dbPath}` };
-  }
-
-  // SQLite 被对方进程占用时不能直接读，先复制一份。
-  // 只复制主库会丢掉 WAL 里尚未 checkpoint 的账号行，必须连 -wal/-shm 一起复制。
-  const copy = path.join(DATA_ROOT, 'cache', 'benchmark-account.db');
-  fs.mkdirSync(path.dirname(copy), { recursive: true });
-  try {
-    for (const suffix of ['', '-wal', '-shm']) {
-      const from = dbPath + suffix;
-      if (fs.existsSync(from)) fs.copyFileSync(from, copy + suffix);
-    }
-  } catch (err) {
-    return { ok: false, message: `复制数据库失败：${(err as Error).message}` };
-  }
-
-  let row: { device?: string; cookies?: string; token?: string; profile?: string } | undefined;
-  try {
-    const db = new DatabaseSync(copy, { readOnly: true });
-    const cnt = db.prepare('SELECT COUNT(*) AS n FROM account').get() as { n: number };
-    log.info('account count = ' + String(cnt.n));
-    row = db.prepare('SELECT device, cookies, token, profile FROM account LIMIT 1').get() as
-      | { device?: string; cookies?: string; token?: string; profile?: string }
-      | undefined;
-    db.close();
-  } catch (err) {
-    return { ok: false, message: `读取账号表失败：${(err as Error).message}` };
-  } finally {
-    const sizes = ['', '-wal', '-shm'].map((suffix) => (fs.existsSync(copy + suffix) ? fs.statSync(copy + suffix).size : 0));
-    log.info(`复制结果 主库/WAL/SHM = ${sizes.join('/')}`);
-    for (const suffix of ['', '-wal', '-shm']) fs.rmSync(copy + suffix, { force: true });
-  }
-
-  log.info(
-    `benchmark account 行: ${row === undefined ? 'none' : Object.keys(row).join(',')} cookiesLen=${String(row?.cookies ?? '').length}`,
-  );
-  if (row === undefined || typeof row.cookies !== 'string' || row.cookies.trim() === '') {
-    return { ok: false, message: '对标客户端里没有已登录的账号' };
-  }
-
-  let device: Record<string, unknown> = {};
-  let profile: SessionProfile = { userId: '', nickname: '', avatar: '', loggedIn: true };
-  try {
-    device = JSON.parse(row.device ?? '{}') as Record<string, unknown>;
-  } catch {
-    return { ok: false, message: '账号设备字段不是合法 JSON' };
-  }
-  try {
-    const p = JSON.parse(row.profile ?? '{}') as { userId?: string; nickname?: string; avatar?: string; loggedIn?: boolean };
-    profile = {
-      userId: p.userId ?? '',
-      nickname: p.nickname ?? '',
-      avatar: p.avatar ?? '',
-      loggedIn: true,
-    };
-  } catch {
-    /* 资料缺了也能用，只是没昵称 */
-  }
-
-  writeDevice(device);
-  writeSession({ cookie: row.cookies, token: row.token ?? '', profile, source: 'import' });
-  log.info(`已从对标客户端导入登录态：Cookie ${cookieCount(mergeCookie('', row.cookies))} 条`);
-
-  const check = await verifySession();
-  return {
-    ok: check.ok,
-    message: check.ok ? '导入成功，会话有效' : `已导入，但校验未通过：${check.message}`,
-    profile,
-    cookieCount: cookieCount(row.cookies),
-  };
 }
 
 /** 扫码登录：取二维码（协议已实现；上游若拒绝会原样透出错误）。 */

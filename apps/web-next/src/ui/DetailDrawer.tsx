@@ -1,15 +1,36 @@
 import { useEffect, useState } from 'react';
 import type { JSX } from 'react';
+import { createPortal } from 'react-dom';
 import { api, type SeriesDetail } from '../api.ts';
 import { useApp } from '../store.ts';
 import { useAsync } from '../hooks/useAsync.ts';
 import { playHash } from '../routes.ts';
 import { DramaCard } from './DramaCard.tsx';
 
-/** 详情抽屉：右侧滑出，点遮罩 / Esc / 切页面都会收起。 */
+/**
+ * 详情抽屉：右侧滑出，点遮罩 / Esc / 切页面都会收起。
+ *
+ * 2.0.0 起用 portal 挂到「当前全屏元素」而不是固定 body：
+ * 网页全屏时浏览器只渲染全屏元素子树，挂 body 的详情会被直接藏掉
+ * （用户反馈的"全屏里点查看详细没反应"就是这个原因）。
+ */
 export function DetailDrawer({ seriesId }: { seriesId: string }): JSX.Element {
   const closeDetail = useApp((s) => s.closeDetail);
   const { data, error, loading, reload } = useAsync((signal) => api.series(seriesId, signal), [seriesId]);
+  const [root, setRoot] = useState<HTMLElement>(
+    () => (document.fullscreenElement as HTMLElement | null) ?? document.body,
+  );
+
+  // 全屏状态变化时把抽屉搬到新的全屏宿主里（退出全屏再搬回 body）
+  useEffect(() => {
+    const sync = (): void => setRoot((document.fullscreenElement as HTMLElement | null) ?? document.body);
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('webkitfullscreenchange', sync);
+    return () => {
+      document.removeEventListener('fullscreenchange', sync);
+      document.removeEventListener('webkitfullscreenchange', sync);
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -19,7 +40,7 @@ export function DetailDrawer({ seriesId }: { seriesId: string }): JSX.Element {
     return () => window.removeEventListener('keydown', onKey);
   }, [closeDetail]);
 
-  return (
+  return createPortal(
     <>
       <div className="detail-backdrop" onClick={closeDetail} />
       <aside
@@ -51,10 +72,12 @@ export function DetailDrawer({ seriesId }: { seriesId: string }): JSX.Element {
 
         {data !== null && <DetailBody detail={data} />}
       </aside>
-    </>
+    </>,
+    root,
   );
 }
 
+/** 详情主体：头部封面/剧名/操作，下面选集与相关推荐。 */
 function DetailBody({ detail }: { detail: SeriesDetail }): JSX.Element {
   const { drama, tags, episodes, recommendations, seasons } = detail;
   const fav = useAsync((signal) => api.favoriteFor(drama.seriesId, signal), [drama.seriesId]);
@@ -71,6 +94,7 @@ function DetailBody({ detail }: { detail: SeriesDetail }): JSX.Element {
   const shownEpisodes = showAllEpisodes ? episodes : episodes.slice(0, 120);
   const cover = drama.cover !== '' ? `/api/img?url=${encodeURIComponent(drama.cover)}` : `/api/poster/${drama.seriesId}`;
 
+  /** 一键把可播放的分集加入下载队列。 */
   const downloadAll = async (): Promise<void> => {
     const playable = episodes.filter((ep) => ep.playable);
     if (playable.length === 0) {
@@ -158,7 +182,7 @@ function DetailBody({ detail }: { detail: SeriesDetail }): JSX.Element {
             </button>
             <button
               className={`btn${isFollowing ? ' btn--primary' : ''}`}
-              title="账号追更写接口暂未接入，追更只记录在本机"
+              title="追更记录在本机，登录后可同步"
               onClick={async () => {
                 try {
                   await api.toggleFollow({

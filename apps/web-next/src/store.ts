@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { api, type AccountStatus } from './api.ts';
+import type { UpdateInfo } from './app-info.ts';
+import { parseHash } from './routes.ts';
 
 /** 视图：与旧版的 9 个 hash 路由对齐，详情/播放后续作为独立层叠加。 */
 export type View =
@@ -25,6 +27,13 @@ interface AppState {
   coreOk: boolean | null;
   /** 账号状态：null=还没查 */
   account: AccountStatus | null;
+  /** 检测到的新版本；null=没有更新 */
+  updateInfo: UpdateInfo | null;
+  /** 更新卡片是否展开（只有点顶栏更新按钮/手动检查才打开） */
+  updateCardOpen: boolean;
+  setUpdateInfo: (info: UpdateInfo | null) => void;
+  openUpdateCard: () => void;
+  closeUpdateCard: () => void;
   /** 登录弹窗开关 */
   loginOpen: boolean;
   /** 打赏弹窗开关 */
@@ -76,11 +85,18 @@ function syncShell(): void {
 }
 
 export const useApp = create<AppState>((set, get) => ({
-  view: 'theater',
+  // 首屏直接按 hash 落位：否则 #/feed、#/settings 这类深链会先渲染剧场，
+  // App 的 hash 校正 effect 又把地址改回 #/，用户看到的就是"深链失效/后退到推荐页"。
+  view: parseHash(location.hash),
   theme: initialTheme,
   accent: initialAccent,
   coreOk: null,
   account: null,
+  updateInfo: null,
+  updateCardOpen: false,
+  setUpdateInfo: (updateInfo) => set({ updateInfo, updateCardOpen: updateInfo !== null ? get().updateCardOpen : false }),
+  openUpdateCard: () => set({ updateCardOpen: true }),
+  closeUpdateCard: () => set({ updateCardOpen: false }),
   loginOpen: false,
   detailId: null,
   libraryTab: 'fav',
@@ -90,6 +106,8 @@ export const useApp = create<AppState>((set, get) => ({
     localStorage.setItem('horun-theme', theme);
     document.documentElement.dataset.theme = theme;
     syncShell();
+    // Win11 无边框窗口的 DWM 边框颜色跟 nativeTheme 走：不同步会留一条白边
+    void window.yimu?.setTheme?.(theme).catch(() => undefined);
     set({ theme });
   },
   toggleTheme: () => get().setTheme(get().theme === 'dark' ? 'light' : 'dark'),

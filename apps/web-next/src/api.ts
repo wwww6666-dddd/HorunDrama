@@ -379,10 +379,13 @@ export const api = {
       { mobile },
     ),
   accountLoginSms: (mobile: string, code: string, smsCodeKey?: string) =>
-    postJson<{ ok: boolean; code: number; message: string; profile?: { userId: string; nickname: string } }>(
-      '/api/account/login/sms',
-      { mobile, code, smsCodeKey },
-    ),
+    postJson<{
+      ok: boolean;
+      code: number;
+      message: string;
+      profile?: { userId: string; nickname: string };
+      needsNewCode?: boolean;
+    }>('/api/account/login/sms', { mobile, code, smsCodeKey }),
   accountContinueSms: (mobile: string, code: string) =>
     postJson<{ ok: boolean; code: number; message: string; profile?: { userId: string; nickname: string } }>(
       '/api/account/login/sms/continue',

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX, ReactNode } from 'react';
 import { api, type FavoriteEntry, type FollowEntry, type LikeEntry, type ProgressEntry } from '../api.ts';
 import { Page } from '../ui/Page.tsx';
 import { StateBlock } from '../ui/StateBlock.tsx';
 import { useAsync } from '../hooks/useAsync.ts';
+import { useTilt } from '../hooks/useTilt.ts';
 import { playHash } from '../routes.ts';
 import { useApp } from '../store.ts';
 import { IconSearch } from '../ui/icons.tsx';
@@ -32,10 +33,14 @@ function LibCard({
   actions: ReactNode;
   onOpen: () => void;
 }): JSX.Element {
+  const ref = useRef<HTMLElement>(null);
+  useTilt(ref, { maxX: 10, maxY: 12, scale: 1.02, lift: -4 });
+
   return (
-    <article className="lib2-card">
+    <article ref={ref} className="lib2-card">
       <button className="lib2-card__poster" onClick={onOpen} title={title}>
         {cover !== '' ? <img src={cover} alt="" loading="lazy" /> : <span className="lib2-card__empty">无封面</span>}
+        <span className="tilt-glare" aria-hidden="true" />
       </button>
       <div className="lib2-card__body">
         <p className="lib2-card__title">{title}</p>

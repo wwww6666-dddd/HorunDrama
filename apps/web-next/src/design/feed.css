@@ -1,4 +1,4 @@
-/* 推荐流（对标）：一屏一条，当前条自动播，右侧操作栏 + 底部信息 + 顶部推荐分类。 */
+/* 推荐流：一屏一条，当前条自动播，右侧操作栏 + 底部信息 + 顶部推荐分类。 */
 
 .feedv {
   position: relative;
@@ -48,15 +48,6 @@
   background-position: center;
   filter: blur(28px) brightness(0.38) saturate(1.15);
   transform: scale(1.06);
-}
-
-.feedv__video {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  background: transparent;
 }
 
 .feedv__shade {
@@ -306,92 +297,6 @@
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
 }
 
-.feedv__controls {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 86px;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 24px;
-  color: #fff;
-  background: linear-gradient(0deg, rgba(0, 0, 0, 0.62), transparent);
-}
-
-.feedv__ctrl {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-  cursor: pointer;
-}
-
-.feedv__ctrl:hover {
-  background: rgba(255, 255, 255, 0.26);
-}
-
-.feedv__time {
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.85);
-  min-width: 40px;
-}
-
-.feedv__seek {
-  flex: 1;
-  height: 4px;
-  accent-color: #ff4d2e;
-  cursor: pointer;
-}
-
-.feedv__muted {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.feedv__danmaku {
-  width: 128px;
-  height: 30px;
-  flex: none;
-  padding: 0 9px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-  font-size: 12px;
-}
-
-.feedv__danmaku::placeholder {
-  color: rgba(255, 255, 255, 0.44);
-}
-
-.feedv__danmaku:focus {
-  outline: none;
-  border-color: rgba(255, 77, 46, 0.6);
-}
-
-.feedv__ctrl--text {
-  width: auto;
-  min-width: 40px;
-  height: 30px;
-  padding: 0 9px;
-  border-radius: 8px;
-  font-size: 11px;
-  white-space: nowrap;
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.feedv__glyph {
-  font-size: 14px;
-  line-height: 1;
-}
-
 .feedv__toast {
   position: absolute;
   left: 50%;
@@ -435,43 +340,12 @@
     bottom: 128px;
   }
 
-  .feedv__controls {
-    bottom: 74px;
-    padding: 8px 14px;
-  }
 }
 
 .feedv__rail-num {
   font-size: 11px;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.86);
-}
-
-.feedv__danmaku-row {
-  position: absolute;
-  left: 24px;
-  right: 24px;
-  bottom: 62px;
-  z-index: 8;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.feedv__pill {
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #f3ece4;
-  font-size: 12px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.feedv__pill:hover {
-  background: rgba(255, 255, 255, 0.2);
 }
 
 /* 底部 dock / 推荐页 tab：去硬边框、柔和底色、平滑过渡 */
@@ -517,10 +391,6 @@
 /* 推荐页：播放器控制条抬到底部 dock 之上，避免重合 */
 .feedv .xgplayer-controls {
   bottom: 84px;
-}
-
-.feedv__danmaku-row {
-  bottom: 140px;
 }
 
 /* 推荐页底部信息再抬高，彻底避开控制条 */

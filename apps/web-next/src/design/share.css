@@ -160,6 +160,57 @@
   color: var(--accent);
 }
 
+/* 解析成功后的影片卡片：先让用户看清是哪部剧、第几集，再决定看不看 */
+.sharedlg__preview {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border-strong);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sharedlg__cover {
+  flex: none;
+  width: 76px;
+  height: 104px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--hover-wash);
+}
+
+.sharedlg__preview-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+
+.sharedlg__preview-title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sharedlg__preview-meta {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.sharedlg__preview-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 .sharedlg__foot {
   margin: 14px 0 0;
   font-size: 12px;

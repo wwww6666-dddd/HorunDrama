@@ -8,14 +8,14 @@
 
 ## 安装版
 
-双击 `HorunDrama Setup 1.1.3.exe` → 一键安装，装完从开始菜单之外的位置找
+双击 `HorunDrama Setup 2.0.5.exe` → 一键安装，装完从开始菜单之外的位置找
 `%LOCALAPPDATA%\Programs\HorunDrama\HorunDrama.exe`（可以直接在文件管理器地址栏粘贴）。
 
 数据目录：`%APPDATA%\HorunDrama`（设置、登录、视频缓存都在这里）。
 
 ## 绿色压缩包版（推荐发给别人）
 
-1. 把 `HorunDrama-1.1.3-win64-portable.zip` **解压到任意文件夹**；
+1. 把 `HorunDrama-2.0.5-win64-portable.zip` **解压到任意文件夹**；
 2. 双击里面的 `HorunDrama.exe`。
 
 压缩包里带 `portable.txt`，程序会自动把数据写在 **exe 同目录的 `data\`** 下，
@@ -38,7 +38,8 @@
 
 ## 更新与反馈
 
-- 检查更新：设置 → 关于 → 「检查更新」，或直接看 GitHub Releases
+- 自动更新提示：启动后会自动检查新版本，弹卡片说明更新内容并给下载链接（自愿更新）
+- 手动检查：设置 → 关于 → 「检查更新」，或直接看 GitHub Releases
 - 问题反馈：顶栏「✎」直接打开 GitHub Issues
 
 ## 常见问题

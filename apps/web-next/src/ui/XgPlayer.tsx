@@ -17,7 +17,7 @@ export interface XgPlayerProps {
 }
 
 /**
- * 对标同款播放器：直接用 xgplayer 的控制条/进度条/音量/倍速/画中画/全屏。
+ * 播放器内核：直接用 xgplayer 的控制条/进度条/音量/倍速/画中画/全屏。
  * 我们只保留自己的外层壳（标题、右侧操作栏、弹幕层）。
  */
 export function XgPlayer({
@@ -162,6 +162,10 @@ export function XgPlayer({
       } catch {
         /* 已销毁 */
       }
+      // React StrictMode（开发态）会把 effect 跑两遍：setup → cleanup → setup。
+      // 如果这里不把 created 复位，第二次 setup 会以为"已经创建过"直接 return，
+      // 结果就是开发环境播放器永远不出现（生产构建不会双跑，所以以前没暴露）。
+      created.current = false;
     };
     // 只在卸载时销毁；换集不会走到这里
     // eslint-disable-next-line react-hooks/exhaustive-deps

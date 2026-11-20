@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { api, pingCore, type Health } from '../api.ts';
-import { FEEDBACK_URL, openExternalUrl } from '../app-info.ts';
+import { FEEDBACK_URL, copyToClipboard, openExternalUrl } from '../app-info.ts';
 import { useApp } from '../store.ts';
 import { WindowControls } from './WindowControls.tsx';
-import { IconMini, IconMoon, IconSearch, IconShare, IconSun } from './icons.tsx';
+import { IconMoon, IconSearch, IconShare, IconSun } from './icons.tsx';
 
 export function TopBar(): JSX.Element {
   const theme = useApp((s) => s.theme);
@@ -17,9 +17,13 @@ export function TopBar(): JSX.Element {
   const openDetail = useApp((s) => s.openDetail);
   const openReward = useApp((s) => s.openReward);
   const openShare = useApp((s) => s.openShare);
+  const updateInfo = useApp((s) => s.updateInfo);
+  const openUpdateCard = useApp((s) => s.openUpdateCard);
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<Array<{ text: string; keyword?: string }>>([]);
   const [suggestOpen, setSuggestOpen] = useState(false);
+  const [toast, setToast] = useState('');
+  const toastTimer = useRef<number | null>(null);
   const suggestTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -34,6 +38,13 @@ export function TopBar(): JSX.Element {
     };
   }, [setCoreOk]);
 
+  /** 顶栏短提示（反馈/外链失败时不让用户觉得"点了没反应"）。 */
+  const showToast = (text: string): void => {
+    setToast(text);
+    if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(''), 2600);
+  };
+
   const runSearch = (value: string): void => {
     const q = value.trim();
     if (q === '') return;
@@ -41,6 +52,15 @@ export function TopBar(): JSX.Element {
     setQuery(q);
     setSuggestOpen(false);
     setView('search');
+  };
+
+  /** 反馈：外链 + 复制链接双保险，并给一个可见反馈。 */
+  const openFeedback = (): void => {
+    void copyToClipboard(FEEDBACK_URL);
+    showToast('正在打开反馈页；链接已复制，若没弹出可直接粘贴到浏览器');
+    void openExternalUrl(FEEDBACK_URL).then((ok) => {
+      if (!ok) showToast('浏览器没打开，反馈链接已复制到剪贴板');
+    });
   };
 
   const changeQuery = (value: string): void => {
@@ -129,9 +149,7 @@ export function TopBar(): JSX.Element {
           className="btn btn--ghost btn--icon"
           title="反馈（GitHub Issues）"
           aria-label="反馈"
-          onClick={() => {
-            openExternalUrl(FEEDBACK_URL);
-          }}
+          onClick={openFeedback}
         >
           <span className="topbar__glyph">✎</span>
         </button>
@@ -143,9 +161,6 @@ export function TopBar(): JSX.Element {
         >
           <IconShare size={18} />
         </button>
-        <button className="btn btn--ghost btn--icon" title="小窗" aria-label="小窗">
-          <IconMini size={18} />
-        </button>
         <button
           className="btn btn--ghost btn--icon"
           onClick={toggleTheme}
@@ -154,6 +169,16 @@ export function TopBar(): JSX.Element {
         >
           {theme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
         </button>
+        {updateInfo !== null && (
+          <button
+            className="topbar__update"
+            title={`发现新版本 v${updateInfo.latest}，点击查看更新`}
+            onClick={openUpdateCard}
+          >
+            <span aria-hidden="true">↑</span>
+            新版本
+          </button>
+        )}
         <span
           className="core-dot"
           data-state={account?.loggedIn === true ? 'ok' : 'idle'}
@@ -181,6 +206,7 @@ export function TopBar(): JSX.Element {
         )}
         <WindowControls />
       </div>
+      {toast !== '' && <div className="topbar__toast">{toast}</div>}
     </header>
   );
 }

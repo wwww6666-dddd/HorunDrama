@@ -93,6 +93,9 @@ export function DanmakuLayer({
     height: `${Math.round(prefs.coverage * 100)}%`,
     '--dm-bg': prefs.background === 'soft' ? 'rgba(8, 7, 6, 0.34)' : 'transparent',
     '--dm-size': `${danmakuFontSize(prefs.size)}px`,
+    '--dm-opacity': String(prefs.opacity),
+    '--dm-weight': prefs.bold ? '700' : '400',
+    '--dm-color': prefs.color,
   } as CSSProperties;
 
   return (

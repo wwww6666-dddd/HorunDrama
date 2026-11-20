@@ -21,8 +21,9 @@
   transform: translateY(-50%);
   padding: 0 4px;
   font-size: var(--dm-size, 17px);
-  font-weight: 500;
-  color: #fff;
+  font-weight: var(--dm-weight, 700);
+  color: var(--dm-color, #fff);
+  opacity: var(--dm-opacity, 1);
   /* 背景默认纯透明：只靠投影保证白字在亮画面上也能读 */
   background: var(--dm-bg, transparent);
   border-radius: 999px;

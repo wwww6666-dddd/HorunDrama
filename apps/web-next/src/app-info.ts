@@ -35,11 +35,22 @@ export function compareVersion(a: string, b: string): number {
   return 0;
 }
 
+export interface UpdateAsset {
+  name: string;
+  url: string;
+  size: number;
+  /** GitHub 新 API 会给 "sha256:..."；旧数据可能为空 */
+  digest: string;
+  contentType: string;
+}
+
 export interface UpdateInfo {
   latest: string;
   url: string;
   name: string;
   publishedAt: string;
+  notes: string;
+  assets: UpdateAsset[];
 }
 
 /**
@@ -64,12 +75,30 @@ export async function checkUpdate(): Promise<UpdateInfo> {
       html_url?: string;
       name?: string;
       published_at?: string;
+      body?: string;
+      assets?: Array<{
+        name?: string;
+        browser_download_url?: string;
+        size?: number;
+        digest?: string;
+        content_type?: string;
+      }>;
     };
     return {
       latest: (json.tag_name ?? '').replace(/^v/i, ''),
       url: json.html_url ?? RELEASES_URL,
       name: json.name ?? '',
       publishedAt: json.published_at ?? '',
+      notes: json.body ?? '',
+      assets: (json.assets ?? [])
+        .filter((a) => typeof a.browser_download_url === 'string' && a.browser_download_url !== '')
+        .map((a) => ({
+          name: a.name ?? '',
+          url: a.browser_download_url ?? '',
+          size: typeof a.size === 'number' ? a.size : 0,
+          digest: a.digest ?? '',
+          contentType: a.content_type ?? '',
+        })),
     };
   } finally {
     window.clearTimeout(timer);
@@ -107,11 +136,31 @@ export async function copyToClipboard(text: string): Promise<boolean> {
  * Electron 走 preload 暴露的 `yimu.openExternal`（main 里 shell.openExternal）；
  * 浏览器里（dev 你用 localhost 打开）退回 window.open。
  */
-export function openExternalUrl(url: string): void {
+export async function openExternalUrl(url: string): Promise<boolean> {
+  /** 浏览器兜底：window.open 在桌面壳里会被 main.cjs 的 setWindowOpenHandler
+   *  转成 shell.openExternal，所以即使 preload 的桥没注入也仍然能跳。 */
+  const browserFallback = (): boolean => {
+    try {
+      const win = window.open(url, '_blank', 'noopener,noreferrer');
+      return win !== null;
+    } catch {
+      return false;
+    }
+  };
   const bridge = (window as unknown as { yimu?: { openExternal?: (u: string) => Promise<unknown> } }).yimu;
   if (bridge?.openExternal !== undefined) {
-    void bridge.openExternal(url).catch(() => undefined);
-    return;
+    try {
+      const ok = await bridge.openExternal(url);
+      if (ok !== false) return true;
+      // shell.openExternal 返回 false：在 Electron 里退回 location 导航，
+      // main 的 will-navigate 会拦截并再次用系统浏览器打开。
+      if (window.yimu !== undefined) {
+        location.href = url;
+        return true;
+      }
+    } catch {
+      /* 落到 browserFallback */
+    }
   }
-  window.open(url, '_blank', 'noopener,noreferrer');
+  return browserFallback();
 }

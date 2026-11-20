@@ -16,6 +16,7 @@ import './design/motion.css';
 import './design/reward.css';
 import './design/share.css';
 import './styles.css';
+import './design/v2.css';
 
 const root = document.getElementById('root');
 if (root === null) throw new Error('#root 不存在');

@@ -6,7 +6,7 @@ import { useApp } from '../store.ts';
 /**
  * 登录弹窗：手机号 + 验证码。
  *
- * 请求格式完全按对标客户端（D:\AAAtest\11111）的真实抓包实现：
+ * 请求格式按官方客户端抓包得到的协议实现：
  * 全部参数走 form body、mobile/code 做 XOR(0x05) hex、发码带 type=3731。
  * 登录成功后会话落盘，之后所有账号能力都用这份会话。
  */
@@ -59,6 +59,9 @@ export function LoginDialog(): JSX.Element | null {
       if (res.ok) {
         setCountdown(typeof res.retryAfter === 'number' && res.retryAfter > 0 ? res.retryAfter : 60);
         if (res.smsCodeKey !== undefined) setSmsCodeKey(res.smsCodeKey);
+        // 上行短信验证后必须换新码：发码成功就把旧码清掉，等待用户输入新码
+        setCode('');
+        setMfa(false);
       }
     } catch (err) {
       setNote(`发送失败：${(err as Error).message}`);
@@ -81,6 +84,8 @@ export function LoginDialog(): JSX.Element | null {
         close();
       } else if (res.code === 2046) {
         setMfa(true);
+        // 关键：MFA 上下文绑定触发验证时的验证码/sms_code_key，
+        // 重新获取验证码会换掉上下文并导致 1203。这里必须保留原验证码。
       }
     } catch (err) {
       setNote(`登录失败：${(err as Error).message}`);
@@ -89,7 +94,7 @@ export function LoginDialog(): JSX.Element | null {
     }
   };
 
-  // 上行短信已发送：只重跑 MFA 校验 + 重试登录，验证码保持不变
+  // 上行短信已发送：用原验证码重跑 MFA 校验 + 重试登录
   const continueVerify = async (): Promise<void> => {
     setBusy(true);
     setNote('正在验证上行短信…');
@@ -121,7 +126,7 @@ export function LoginDialog(): JSX.Element | null {
 
         <p className="dialog__hint">
           验证码会发到你的手机。登录后本机使用该账号的收藏、观看记录与订阅数据，
-          与官方 App / 对标客户端共用同一个账号。
+          与官方 App 共用同一个账号。
         </p>
 
         <label className="dialog__field">
@@ -166,8 +171,12 @@ export function LoginDialog(): JSX.Element | null {
         </button>
 
         {mfa && (
-          <button className="btn dialog__submit" disabled={busy || code.length < 4} onClick={() => void continueVerify()}>
-            我已发送上行短信，继续验证
+          <button
+            className="btn dialog__submit"
+            disabled={busy || code.length < 4}
+            onClick={() => void continueVerify()}
+          >
+            我已发送短信，继续验证
           </button>
         )}
 

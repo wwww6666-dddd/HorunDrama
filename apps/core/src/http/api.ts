@@ -147,13 +147,8 @@ export function registerRoutes(router: Router): void {
     });
   });
 
-  router.get('/api/meta', ({ res }: Ctx) => {
-    ok(res, {
-      version: VERSION,
-      stage: 'M2',
-      features: { catalog: true, playback: false, account: false, login: false },
-    });
-  });
+  // 2.0.0：删掉废弃的 /api/meta（stage/features 是早期占位数据，前端从未使用，
+  // 留着只会给扫描器多一个无意义入口）。
 
   router.get('/api/home', async ({ res }: Ctx) => {    try {
       ok(res, await home());
@@ -622,7 +617,7 @@ export function registerRoutes(router: Router): void {
     }
   });
 
-  // 短剧评论列表（对标 /novel/commentapi/comment/list/<episode>/v1/）
+  // 短剧评论列表（参考 /novel/commentapi/comment/list/<episode>/v1/）
   router.get('/api/comments', async ({ res, url }: Ctx) => {
     const seriesId = url.searchParams.get('seriesId') ?? '';
     const episodeId = url.searchParams.get('episodeId') ?? '';
@@ -648,7 +643,7 @@ export function registerRoutes(router: Router): void {
     }
   });
 
-  // 评论回复列表（对标 Replies）
+  // 评论回复列表（参考 Replies）
   router.get('/api/replies', async ({ res, url }: Ctx) => {
     const seriesId = url.searchParams.get('seriesId') ?? '';
     const episodeId = url.searchParams.get('episodeId') ?? '';
@@ -674,7 +669,7 @@ export function registerRoutes(router: Router): void {
     }
   });
 
-  // 发评论 / 发弹幕（对标 SendComment / SendDanmaku → comment/add/v1/）
+  // 发评论 / 发弹幕（参考 SendComment / SendDanmaku → comment/add/v1/）
   router.post('/api/comment', async ({ req, res }: Ctx) => {
     if (!accountLoggedIn()) {
       fail(res, 401, 'not_logged_in', '请先登录再发评论');
@@ -897,7 +892,7 @@ export function registerRoutes(router: Router): void {
     ok(res, listFavorites(num(url.searchParams.get('limit'), 200)));
   });
 
-  // ---------------- 点赞（本地，对标 local_like） ----------------
+  // ---------------- 点赞（本地，参考 local_like） ----------------
 
   router.get('/api/likes', ({ res, url }: Ctx) => {
     ok(res, listLikes(num(url.searchParams.get('limit'), 200)));

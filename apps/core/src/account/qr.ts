@@ -1,7 +1,7 @@
 /**
  * 扫码登录（pc 站 passport）。
  *
- * 全部参数来自对标客户端的真实请求（GODEBUG=http2debug=2 抓包）：
+ * 全部参数来自官方客户端的真实请求（GODEBUG=http2debug=2 抓包）：
  *  - GET /passport/web/get_qrcode/  aid=513755 + account_sdk_source_info（指纹 XOR 0x05 hex）
  *  - GET /passport/web/check_qrconnect/  同样的参数 + token
  *
@@ -25,7 +25,7 @@ interface Attempt {
 const attempts = new Map<string, Attempt>();
 const MAX_ATTEMPTS = 32;
 
-/** WebView 指纹：对标端用 innerWidth/outerWidth 等做环境校验，XOR 0x05 后转 hex。 */
+/** WebView 指纹：官方客户端用 innerWidth/outerWidth 等做环境校验，XOR 0x05 后转 hex。 */
 function fingerprint(): string {
   const json = JSON.stringify({
     hardwareConcurrency: 8,

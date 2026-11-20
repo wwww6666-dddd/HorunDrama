@@ -3,6 +3,7 @@ import type { JSX } from 'react';
 import type Player from 'xgplayer';
 import { api, type CommentItem, type CommentPage, type DanmakuItem, type PlayJob, type SeriesDetail } from '../api.ts';
 import { CAN_PLAY_HEVC } from '../media-support.ts';
+import { goBack, replacePlayHash } from '../nav.ts';
 import { playHash, type PlayRoute } from '../routes.ts';
 import { useApp } from '../store.ts';
 import { DanmakuLayer } from '../ui/DanmakuLayer.tsx';
@@ -64,7 +65,19 @@ function fmtCommentTime(ts: number): string {
   return `${d.getMonth() + 1}-${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-/** 播放页：xgplayer 控制条 + 对标外壳（顶栏 / 右侧操作栏 / 底部信息）。 */
+/**
+ * 从播放地址反推它是哪一集。
+ *
+ * 地址有三种：`/api/media/<episodeId>-1080p[-hevc].mp4`、`/api/stream/<episodeId>`、
+ * `/api/live/<episodeId>`。切集时旧媒体会被 pause，而那一刻路由已经换成新的一集，
+ * 不按地址核对就会把上一集的进度写进新一集的记录里（再打开会"跳到别人的进度"）。
+ */
+function episodeOfUrl(url: string): string {
+  const matched = /\/(\d{6,25})(?:[-/.]|$)/.exec(url);
+  return matched === null ? '' : (matched[1] ?? '');
+}
+
+/** 播放页：xgplayer 控制条 + 沉浸式外壳（顶栏 / 右侧操作栏 / 底部信息）。 */
 export function Play({ route }: { route: PlayRoute }): JSX.Element {
   const [job, setJob] = useState<PlayJob | null>(null);
   const [detail, setDetail] = useState<SeriesDetail | null>(null);
@@ -99,6 +112,17 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
   const [switching, setSwitching] = useState(false);
   /** 这次过渡是从哪一集发起的（路由变了才算切成功） */
   const switchingFrom = useRef('');
+  /**
+   * 当前 `job` / 播放地址属于**哪一集**。
+   *
+   * 切集时 `job` 故意不清空（清了会把播放器卸载 → 画中画被关、全屏退出），
+   * 所以"job 是 ready"并不代表"新一集能播"：路由已经换到下一集，job 还是上一集的。
+   * 没有这个字段就只能看 `job.state`，于是选集后旧画面会继续播、等待层也不出现，
+   * 用户看到的就是"点了选集却没反应，等那一集加载完才突然跳过去"。
+   */
+  const [jobEpisode, setJobEpisode] = useState('');
+  /** 这个 effect 上一次为哪一集起过任务（换集时要立刻把旧画面停掉） */
+  const lastEpisode = useRef('');
   /** 「分享续播」的起播点只认一次（换清晰度/重取流时不能把人拽回分享点） */
   const shareSeekUsed = useRef('');
   const [quality, setQuality] = useState<string>(() => localStorage.getItem('horun-quality') ?? '1080p');
@@ -168,6 +192,19 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
   // 而前后各 N 集的预加载会把后续集提前转好，追剧时基本不用等。
   useEffect(() => {
     let cancelled = false;
+    // 换集（选集 / 上一集下一集 / 自动连播）：**立刻把上一集停下**。
+    // 新一集要等取流 + 转码（关增强 7~20s，开增强 ~80s），这期间如果旧画面还在播，
+    // 用户会以为"点了选集没反应"，然后播到一半突然跳集。清空 job 又会卸载播放器
+    // （画中画/全屏丢失），所以只暂停、不卸载，等待一律由 `waiting` 那层卡盖住。
+    const episodeChanged = lastEpisode.current !== '' && lastEpisode.current !== route.episodeId;
+    lastEpisode.current = route.episodeId;
+    if (episodeChanged) {
+      try {
+        playerRef.current?.pause();
+      } catch {
+        /* 播放器还没起来 / 已销毁：忽略 */
+      }
+    }
     // 切集时**不清空 job / startReady**：保留上一集画面，等新集就绪后原地换源。
     // 一旦清空，readyUrl 变空会把播放器卸载，浏览器会顺手关掉画中画、退出全屏。
     setTime(0);
@@ -179,12 +216,18 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
     outroSkipped.current = false;
     liveFallback.current = false;
 
+    /** 换 job 时连"这是哪一集"一起记下来（只暂停不卸载，靠它判断旧画面还在不在） */
+    const applyJob = (next: PlayJob): void => {
+      setJob(next);
+      setJobEpisode(route.episodeId);
+    };
+
     // 高清起不来（上游限流/转码失败）时的兜底：退官网 360p 直连，至少能接着看
     const fallbackSmooth = async (): Promise<boolean> => {
       const fallback = await api.play(route.episodeId, 'smooth', false, false, false, false).catch(() => null);
       if (cancelled) return true;
       if (fallback !== null && fallback.state === 'ready' && fallback.url !== '') {
-        setJob(fallback);
+        applyJob(fallback);
         setPlayingDefinition(fallback.definition);
         flash('高清没准备好，先用流畅线路播放（可拖动）');
         return true;
@@ -204,7 +247,7 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
           true,
         );
         if (cancelled) return;
-        setJob(current);
+        applyJob(current);
         setPlayingDefinition(current.definition);
         setUpgradeJobId(current.upgradeJobId);
         while (!cancelled && current.state !== 'ready' && current.state !== 'failed') {
@@ -212,7 +255,7 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
           if (cancelled) return;
           current = await api.prepare(current.jobId);
           if (cancelled) return;
-          setJob(current);
+          applyJob(current);
           setPlayingDefinition(current.definition);
           setUpgradeJobId(current.upgradeJobId);
         }
@@ -225,7 +268,7 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
       } catch (err) {
         if (cancelled) return;
         if (await fallbackSmooth()) return;
-        setJob({
+        applyJob({
           jobId: '',
           mode: 'file',
           state: 'failed',
@@ -386,7 +429,8 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
           if (delta > 0) flash('已经是最后一集了');
           return true;
         }
-        location.hash = playHash(route.seriesId, target.episodeId, target.no);
+        // 换集替换当前历史条目：否则自动连播几集后，返回要一集一集退
+        replacePlayHash(playHash(route.seriesId, target.episodeId, target.no));
         return true;
       };
       if (go(detailRef.current)) return;
@@ -516,8 +560,20 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
     }
   };
 
+  /** 弹幕外观偏好：写 localStorage 并同步当前页面（播放器设置面板用）。 */
+  const patchDanmaku = (patch: Partial<DanmakuPrefs>): void => {
+    setDanmaku(writeDanmakuPrefs(patch));
+  };
+
+  /** 快捷开关弹幕（D 键 / 控制条按钮）。 */
   const toggleDanmaku = (): void => {
-    setDanmaku(writeDanmakuPrefs({ enabled: !danmaku.enabled }));
+    patchDanmaku({ enabled: !danmaku.enabled });
+  };
+
+  /** 播放设置：本地状态立即生效，同时写回核心 settings.json。 */
+  const patchPrefs = (patch: Partial<PlayPrefs>): void => {
+    setPrefs((prev) => (prev === null ? prev : { ...prev, ...patch }));
+    void api.saveSettings(patch).catch(() => flash('设置保存失败（只在本页生效）'));
   };
 
   const { items: danmakuItems } = useDanmaku({
@@ -775,17 +831,37 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
   // 上一集/上一档已经能播的地址：新集还在准备时先继续用它，
   // 这样播放器不会卸载重建（画中画、全屏状态都保得住）
   const lastPlayableUrl = useRef('');
-  if (upgrade?.url !== undefined) lastPlayableUrl.current = upgrade.url;
-  else if (job?.state === 'ready' && job.url !== '') lastPlayableUrl.current = job.url;
+  /** 上面那个地址属于哪一集 —— 决定它能不能用来"先播着" */
+  const playableEpisode = useRef('');
+  if (upgrade?.url !== undefined) {
+    lastPlayableUrl.current = upgrade.url;
+    playableEpisode.current = route.episodeId;
+  } else if (job?.state === 'ready' && job.url !== '') {
+    lastPlayableUrl.current = job.url;
+    playableEpisode.current = jobEpisode;
+  }
   const readyUrl = upgrade?.url ?? (job?.state === 'ready' ? job.url : lastPlayableUrl.current);
-  const waiting = upgrade === null && (job === null || (job.state !== 'ready' && job.state !== 'failed'));
+  /** 播放器里挂着的地址其实还是上一集（新集在取流/转码）—— 选集后最常见的状态 */
+  const staleMedia = jobEpisode !== '' && jobEpisode !== route.episodeId;
+  /**
+   * 当前这一集有没有能播的地址（旧档位也算）。
+   *
+   * 换集：`jobEpisode` 还是上一集 → 直接没有 → 盖等待卡（旧画面已暂停、压暗）。
+   * 换清晰度：同一集、旧档位还在播 → 有 → 不盖卡，旧画面继续播到新档位就绪（1.1.3 的行为）。
+   */
+  const playableNow = playableEpisode.current === route.episodeId;
+  const waiting = upgrade === null && !playableNow;
+  /** 旧 job 的 message/progress 跟当前集无关，切集那一下一律当成"取流中" */
+  const waitingJob = staleMedia ? null : job;
+  const waitingNo = currentIndex >= 0 ? currentIndex + 1 : route.no;
 
   // 键盘：播放器统一处理空格/←→/↑↓（切集），这里只留播放页自己的 d / Esc
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.target instanceof HTMLInputElement) return;
       if (e.key === 'd' || e.key === 'D') toggleDanmaku();
-      else if (e.key === 'Escape') location.hash = '#/feed';
+      // Esc 第一下只退全屏（goBack 里有判断），第二下才回来源页
+      else if (e.key === 'Escape') goBack('#/');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -840,7 +916,8 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
       className="play"
       ref={pageRef}
       data-chrome-hidden={!chromeVisible}
-      data-switching={switching}
+      // 等待新集时也要盖掉 xgplayer 的「重播/进入」浮层（play.css 里按这个属性隐藏）
+      data-switching={switching || waiting}
       onMouseMove={wakeChrome}
       onClick={wakeChrome}
       onTouchStart={wakeChrome}
@@ -861,7 +938,10 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
             setPlaying(v);
             if (!v) {
               const p = playerRef.current;
-              if (p !== null) report(p.currentTime, p.duration || 0);
+              // 切集时被暂停的是**上一集**的媒体（地址里还是上一集），
+              // 这条进度不能记到新一集头上（否则下次打开新集会从上一集的位置开始）
+              const src = (p?.media as HTMLVideoElement | null)?.currentSrc ?? '';
+              if (p !== null && episodeOfUrl(src) === route.episodeId) report(p.currentTime, p.duration || 0);
             }
           }}
           onEnded={() => {
@@ -891,12 +971,25 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
             qualities: job?.available ?? [],
             quality,
             definition: playingDefinition,
+            rate,
+            onRate: (value) => {
+              setRate(value);
+              patchPrefs({ defaultSpeed: value });
+            },
+            autoPlayNext: prefs?.autoPlayNext !== false,
+            onToggleAutoNext: () => patchPrefs({ autoPlayNext: prefs?.autoPlayNext === false }),
+            skipIntroSec: prefs?.skipIntroSec ?? 0,
+            skipOutroSec: prefs?.skipOutroSec ?? 0,
+            onSkipIntro: (value) => patchPrefs({ skipIntroSec: value }),
+            onSkipOutro: (value) => patchPrefs({ skipOutroSec: value }),
+            danmakuEnabled: danmaku.enabled,
+            danmakuPrefs: danmaku,
+            onDanmakuPrefs: patchDanmaku,
+            danmakuText,
             onEpisodes: () => setEpisodesOpen(true),
             onQuality: switchQuality,
             onPrev: currentIndex > 0 ? () => neighbor(-1) : undefined,
             onNext: currentIndex >= 0 && currentIndex < episodeCount - 1 ? () => neighbor(1) : undefined,
-            danmakuEnabled: danmaku.enabled,
-            danmakuText,
             onToggleDanmaku: toggleDanmaku,
             onDanmakuText: setDanmakuText,
             onSendDanmaku: sendDanmaku,
@@ -918,7 +1011,7 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
       <div className="play__dragbar" title="按住拖动窗口" />
 
       <header className="play__top" data-hidden={!chromeVisible}>
-        <button className="btn btn--ghost btn--icon" title="返回" onClick={() => (location.hash = '#/feed')}>
+        <button className="btn btn--ghost btn--icon" title="返回上一页" onClick={() => goBack('#/')}>
           <IconBack size={18} />
         </button>
         <div className="play__top-title">
@@ -990,23 +1083,30 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
       </div>
 
       {waiting && (
-        <div className="play__waiting">
+        // data-over：下面还挂着上一集的画面（播放器不卸载）→ 压暗 + 延迟淡入，
+        // 命中缓存那种"秒切"就不会闪一下卡片；data-failed：失败态可穿透点击（还能选集/重试）
+        <div className="play__waiting" data-over={readyUrl !== ''} data-failed={waitingJob?.state === 'failed'}>
           <div className="play__waiting-card glass">
-            <p className="play__waiting-title">{job?.state === 'failed' ? '准备失败' : '正在准备这一集'}</p>
-            <p className="play__waiting-sub">{job?.state === 'failed' ? job.error : (job?.message ?? '取流中…')}</p>
-            {job?.state !== 'failed' && (
+            <p className="play__waiting-title">
+              {waitingJob?.state === 'failed' ? '准备失败' : `正在准备第 ${waitingNo} 集`}
+            </p>
+            <p className="play__waiting-sub">
+              {waitingJob?.state === 'failed' ? waitingJob.error : (waitingJob?.message ?? '取流中…')}
+            </p>
+            {waitingJob?.state !== 'failed' && (
               <div className="play__progress">
-                <span style={{ width: `${Math.round((job?.progress ?? 0) * 100)}%` }} />
+                <span style={{ width: `${Math.round((waitingJob?.progress ?? 0) * 100)}%` }} />
               </div>
             )}
-            {job?.state !== 'failed' && (
+            {waitingJob?.state !== 'failed' && (
               <p className="play__waiting-hint">准备好后播本地文件：时长准确、进度条能拖；看剧时前后几集会提前转好</p>
             )}
           </div>
         </div>
       )}
 
-      {switching && (
+      {/* 只留给"点了下一集但路由没换成"的兜底（6s 后提示手动选集） */}
+      {switching && !waiting && (
         <div className="play__switching" role="status">
           <span className="play__spinner" />
           <p>正在加载下一集…</p>
@@ -1157,7 +1257,7 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
                   disabled={!ep.playable}
                   onClick={() => {
                     setEpisodesOpen(false);
-                    location.hash = playHash(route.seriesId, ep.episodeId, ep.no);
+                    replacePlayHash(playHash(route.seriesId, ep.episodeId, ep.no));
                   }}
                 >
                   {ep.no}

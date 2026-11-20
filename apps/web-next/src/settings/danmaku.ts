@@ -13,6 +13,12 @@ export interface DanmakuPrefs {
   /** 弹幕占屏比例：0.3 / 0.45 / 0.6 / 0.8 */
   coverage: number;
   size: DanmakuSize;
+  /** 文字不透明度：0.3~1，播放器设置面板可调 */
+  opacity: number;
+  /** 是否加粗：默认 true，和参考播放器一致 */
+  bold: boolean;
+  /** 文字颜色：预设色值，默认白色 */
+  color: string;
 }
 
 const KEY = 'horun-danmaku-prefs';
@@ -31,12 +37,24 @@ export const SIZE_OPTIONS: Array<{ value: DanmakuSize; label: string }> = [
   { value: 'lg', label: '大' },
 ];
 
+export const DANMAKU_COLORS: Array<{ value: string; label: string }> = [
+  { value: '#ffffff', label: '白' },
+  { value: '#ffe14d', label: '黄' },
+  { value: '#7fe7ff', label: '青' },
+  { value: '#ff9ecf', label: '粉' },
+  { value: '#9dff8a', label: '绿' },
+  { value: '#ffb27a', label: '橙' },
+];
+
 const DEFAULTS: DanmakuPrefs = {
   enabled: true,
   // 默认纯透明：胶囊底会把画面糊住
   background: 'none',
   coverage: 0.45,
   size: 'md',
+  opacity: 1,
+  bold: true,
+  color: '#ffffff',
 };
 
 export function readDanmakuPrefs(): DanmakuPrefs {
@@ -52,6 +70,12 @@ export function readDanmakuPrefs(): DanmakuPrefs {
             ? parsed.coverage
             : DEFAULTS.coverage,
         size: parsed.size === 'sm' || parsed.size === 'lg' ? parsed.size : 'md',
+        opacity:
+          typeof parsed.opacity === 'number' && parsed.opacity >= 0.2 && parsed.opacity <= 1
+            ? parsed.opacity
+            : DEFAULTS.opacity,
+        bold: typeof parsed.bold === 'boolean' ? parsed.bold : DEFAULTS.bold,
+        color: typeof parsed.color === 'string' && /^#[0-9a-f]{6}$/i.test(parsed.color) ? parsed.color : DEFAULTS.color,
       };
     }
     // 兼容旧开关

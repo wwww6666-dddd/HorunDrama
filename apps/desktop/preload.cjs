@@ -7,6 +7,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('yimu', {
   /** 打开内嵌的官方登录窗口；成功后自动把 Cookie 交给本地服务 */
   openLogin: () => ipcRenderer.invoke('yimu:open-login'),
+  /** 同步应用主题给主进程（Windows 11 DWM 边框颜色跟随，避免白边） */
+  setTheme: (theme) => ipcRenderer.invoke('yimu:set-theme', theme),
   /** 切换窗口全屏（F11） */
   toggleFullscreen: () => ipcRenderer.invoke('yimu:toggle-fullscreen'),
   isFullscreen: () => ipcRenderer.invoke('yimu:is-fullscreen'),
@@ -24,6 +26,16 @@ contextBridge.exposeInMainWorld('yimu', {
   minimize: () => ipcRenderer.invoke('yimu:minimize'),
   /** 用系统浏览器打开外链（反馈/更新/GitHub） */
   openExternal: (url) => ipcRenderer.invoke('yimu:open-external', url),
+  /** 自动更新：后台下载更新包（主进程写文件，带进度） */
+  updateDownload: (payload) => ipcRenderer.invoke('yimu:update-download', payload),
+  /** 自动更新：退出并解压覆盖，然后重启 */
+  updateInstall: (payload) => ipcRenderer.invoke('yimu:update-install', payload),
+  /** 下载进度：{ received, total, percent } */
+  onUpdateProgress: (cb) => {
+    const handler = (_e, payload) => cb(payload);
+    ipcRenderer.on('yimu:update-progress', handler);
+    return () => ipcRenderer.removeListener('yimu:update-progress', handler);
+  },
   /** 写剪贴板（主进程 clipboard，比渲染进程的 navigator.clipboard 可靠） */
   copyText: (text) => ipcRenderer.invoke('yimu:copy-text', text),
   toggleMaximize: () => ipcRenderer.invoke('yimu:toggle-maximize'),

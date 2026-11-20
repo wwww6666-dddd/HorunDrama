@@ -2,6 +2,8 @@
 
 export interface YimuBridge {
   openLogin?: () => Promise<unknown>;
+  /** 同步深浅主题给主进程（DWM 边框颜色） */
+  setTheme?: (theme: 'dark' | 'light') => Promise<boolean>;
   toggleFullscreen?: () => Promise<boolean>;
   isFullscreen?: () => Promise<boolean>;
   setFullscreen?: (v: boolean) => Promise<boolean>;
@@ -13,6 +15,17 @@ export interface YimuBridge {
   minimize?: () => Promise<void>;
   /** 用系统浏览器打开外链（反馈/GitHub/更新下载） */
   openExternal?: (url: string) => Promise<boolean>;
+  /** 自动更新：后台下载更新包（主进程写文件，带进度） */
+  updateDownload?: (payload: {
+    url: string;
+    name: string;
+    size?: number;
+    digest?: string;
+  }) => Promise<{ ok: boolean; path?: string; size?: number; sha256?: string; message?: string }>;
+  /** 自动更新：退出并解压覆盖，然后重启 */
+  updateInstall?: (payload: { path: string }) => Promise<{ ok: boolean; message?: string }>;
+  /** 下载进度：0~1 */
+  onUpdateProgress?: (cb: (payload: { received: number; total: number; percent: number }) => void) => () => void;
   /** 写剪贴板（主进程 clipboard） */
   copyText?: (text: string) => Promise<boolean>;
   toggleMaximize?: () => Promise<void>;

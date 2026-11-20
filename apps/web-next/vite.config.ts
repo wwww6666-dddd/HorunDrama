@@ -35,7 +35,8 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // 生产包不需要 sourcemap：之前每次构建都残留 2.5MB/份的 .map，16 份约 39MB
+    sourcemap: false,
     emptyOutDir: true,
   },
 });

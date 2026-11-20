@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { JSX } from 'react';
 import { coverOf, type Drama } from '../api.ts';
 import { useApp } from '../store.ts';
+import { useTilt } from '../hooks/useTilt.ts';
 
 interface Props {
   drama: Drama;
@@ -9,9 +10,18 @@ interface Props {
   score?: string;
 }
 
+/**
+ * 影视卡片。
+ *
+ * 3D 倾斜 + 跟随光标柔光斑，逻辑统一在 useTilt：
+ * - 透视/角度/缩放由 v2.css 的 `.drama-card` 消费；
+ * - 光斑由 `.tilt-glare` 消费；
+ * - 松手回正用速度+阻尼弹簧，有轻微回弹。
+ */
 export function DramaCard({ drama, rank, score }: Props): JSX.Element {
   const openDetail = useApp((s) => s.openDetail);
   const ref = useRef<HTMLElement>(null);
+  useTilt(ref);
   // 搜索接口不给封面：退回按 seriesId 补取（后端带缓存）
   const cover = drama.cover !== '' ? coverOf(drama) : `/api/poster/${drama.seriesId}`;
   const meta = score !== '' && score !== undefined ? score : drama.heatText;
@@ -19,7 +29,6 @@ export function DramaCard({ drama, rank, score }: Props): JSX.Element {
   useEffect(() => {
     const el = ref.current;
     if (el === null) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     // 悬停 150ms 预取详情，点开时后端缓存已热
     let prefetchTimer: number | null = null;
@@ -35,31 +44,18 @@ export function DramaCard({ drama, rank, score }: Props): JSX.Element {
       prefetchTimer = null;
     };
 
-    const onMove = (event: PointerEvent): void => {
-      const rect = el.getBoundingClientRect();
-      const x = (event.clientX - rect.left) / Math.max(1, rect.width);
-      const y = (event.clientY - rect.top) / Math.max(1, rect.height);
-      el.style.setProperty('--rx', `${(0.5 - y) * 9}deg`);
-      el.style.setProperty('--ry', `${(x - 0.5) * 11}deg`);
-      el.style.setProperty('--mx', `${x * 100}%`);
-      el.style.setProperty('--my', `${y * 100}%`);
-    };
-    const onLeave = (): void => {
-      el.style.setProperty('--rx', '0deg');
-      el.style.setProperty('--ry', '0deg');
-      cancelPrefetch();
-    };
-
     el.addEventListener('pointerenter', prefetch);
-    el.addEventListener('pointermove', onMove);
-    el.addEventListener('pointerleave', onLeave);
+    el.addEventListener('pointerleave', cancelPrefetch);
     return () => {
       cancelPrefetch();
       el.removeEventListener('pointerenter', prefetch);
-      el.removeEventListener('pointermove', onMove);
-      el.removeEventListener('pointerleave', onLeave);
+      el.removeEventListener('pointerleave', cancelPrefetch);
     };
-  }, []);
+  }, [drama.seriesId]);
+
+  const open = (): void => {
+    openDetail(drama.seriesId);
+  };
 
   return (
     <article
@@ -68,11 +64,11 @@ export function DramaCard({ drama, rank, score }: Props): JSX.Element {
       tabIndex={0}
       role="button"
       aria-label={drama.title}
-      onClick={() => openDetail(drama.seriesId)}
+      onClick={open}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          openDetail(drama.seriesId);
+          open();
         }
       }}
     >
@@ -82,6 +78,7 @@ export function DramaCard({ drama, rank, score }: Props): JSX.Element {
         ) : (
           <div className="drama-card__empty" />
         )}
+        <span className="tilt-glare" aria-hidden="true" />
         {rank !== undefined && rank > 0 && <span className="drama-card__rank">{rank}</span>}
         {drama.finished && <span className="drama-card__badge">完结</span>}
       </div>

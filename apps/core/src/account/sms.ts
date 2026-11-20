@@ -1,7 +1,7 @@
 /**
- * 手机号 + 验证码登录（完全复刻对标客户端 D:\AAAtest\11111 的真实请求）。
+ * 手机号 + 验证码登录（完全复刻官方客户端  的真实请求）。
  *
- * 这些参数是用 GODEBUG=http2debug=2 抓到对标端请求行、再从进程内存里读出完整
+ * 这些参数是用 GODEBUG=http2debug=2 抓到官方客户端请求行、再从进程内存里读出完整
  * POST body 后逐项确认的（2026-11-16），别再凭猜改：
  *
  *  - 主机：api5-normal-lq.fqnovel.com
@@ -33,9 +33,9 @@ const UA =
   'com.phoenix.read/73932 (Linux; U; Android 14; zh_CN; Xiaomi 14; Build/UKQ1.230804.001; ' +
   'Cronet/TTNetVersion:8d40f833 QuicVersion:462f352c 2026-08-31)';
 
-/** 发码场景：对标端实际发送 type=3731（XOR(0x05) 解码为 "24"）。 */
+/** 发码场景：官方客户端实际发送 type=3731（XOR(0x05) 解码为 "24"）。 */
 const SEND_CODE_TYPE = '3731';
-/** 对标端发码时同发的解绑标记（实测原样 34）。 */
+/** 官方客户端发码时同发的解绑标记（实测原样 34）。 */
 const SEND_CODE_UNBIND = '34';
 
 interface AppDeviceFile {
@@ -66,7 +66,7 @@ function readAppDeviceFile(): AppDeviceFile | null {
 }
 
 /**
- * 登录用的设备身份：与浏览共用同一台匿名设备（对标端也是这么做的）。
+ * 登录用的设备身份：与浏览共用同一台匿名设备（官方客户端也是这么做的）。
  * 没有匿名设备时让 SDK 现场注册一台，保证 device_id / iid / cdid 都真实存在。
  */
 async function ensureAppDevice(): Promise<{
@@ -179,7 +179,7 @@ function normalizeMobile(mobile: string): string {
   return `+${digits}`;
 }
 
-/** 对标端请求体的完整参数集（按 key 排序，值全部是字符串）。 */
+/** 官方客户端请求体的完整参数集（按 key 排序，值全部是字符串）。 */
 function buildParams(device: LoginDevice, extra: Record<string, string>): URLSearchParams {
   const now = Date.now();
   const params: Record<string, string> = {
@@ -311,7 +311,11 @@ export async function sendSmsCode(
   if (!/^1\d{10}$/.test(mobile)) return { ok: false, code: -1, message: '手机号格式不对' };
 
   try {
-    const device = await ensureAppDevice();
+    // 如果当前已经在「上行短信验证（MFA）」流程里，重新发码时保留原 MFA 上下文、
+    // 设备和 passport_mfa_token；否则新码会换掉上下文，上游直接 1203。
+    const previous = readPending(mobile);
+    const keepMfa = previous !== null && previous.mfa !== undefined;
+    const device = keepMfa && previous !== null ? deviceFromIdentity(previous.device) : await ensureAppDevice();
     // 会话与设备必须成对：登录用哪台设备，就把这台记成账号设备
     writeDevice(toDeviceIdentity(device));
     const body = buildParams(device, {
@@ -319,7 +323,7 @@ export async function sendSmsCode(
       type: SEND_CODE_TYPE,
       unbind_exist: SEND_CODE_UNBIND,
     });
-    const reply = await postPassport('/passport/mobile/send_code/v1/', body, guestCookie(device));
+    const reply = await postPassport('/passport/mobile/send_code/v1/', body, previous?.cookie ?? guestCookie(device));
     log.info(`send_code：HTTP ${reply.status} ${reply.raw.slice(0, 240)}`);
 
     const data = dataOf(reply.json);
@@ -329,9 +333,10 @@ export async function sendSmsCode(
       // 否则验证码会被判「过期/错误次数过多」（实测 1203）。
       writePending({
         mobile,
-        cookie: mergeCookies(readPending(mobile)?.cookie ?? guestCookie(device), reply.cookies),
-        mobileTicket: String(data.mobile_ticket ?? ''),
-        device: toDeviceIdentity(device),
+        cookie: mergeCookies(previous?.cookie ?? guestCookie(device), reply.cookies),
+        mobileTicket: keepMfa ? previous?.mobileTicket ?? String(data.mobile_ticket ?? '') : String(data.mobile_ticket ?? ''),
+        device: keepMfa ? previous?.device ?? toDeviceIdentity(device) : toDeviceIdentity(device),
+        mfa: keepMfa ? previous?.mfa : undefined,
         at: Date.now(),
       });
       return {
@@ -356,7 +361,7 @@ export async function loginWithSms(
   mobile: string,
   code: string,
   _smsCodeKey = '',
-): Promise<{ ok: boolean; code: number; message: string; profile?: SessionProfile }> {
+): Promise<{ ok: boolean; code: number; message: string; profile?: SessionProfile; needsNewCode?: boolean }> {
   if (!/^1\d{10}$/.test(mobile)) return { ok: false, code: -1, message: '手机号格式不对' };
   if (!/^\d{4,8}$/.test(code)) return { ok: false, code: -1, message: '验证码格式不对' };
 
@@ -440,8 +445,9 @@ export async function loginWithSms(
           const hint =
             upSms === null
               ? '上游要求身份验证（MFA），暂无法自动完成'
-              : `上游要求身份验证：请用手机向 ${upSms.channelMobile} 发送短信 ${upSms.smsContent}，` +
-                '发送后**保持验证码不变**、再点一次「登录」（不用重新获取验证码）';
+              : `上游要求身份验证：请用手机向 ${upSms.channelMobile} 发送短信 ${upSms.smsContent}。` +
+                '发送完成后点「我已发送，继续验证」。**不要重新获取验证码**——重新获取会换掉 MFA 上下文，' +
+                '上游会判 1203「验证码已过期或长时间未操作」。';
           log.warn(`需要上行短信验证：${hint}`);
           return { ok: false, code: errCode, message: hint };
         }
@@ -596,7 +602,7 @@ interface MfaContext {
   ticket?: string;
 }
 
-/** 从 2046 响应里抽出上行短信验证需要的全部上下文（对标端 upsms/verify 的入参）。 */
+/** 从 2046 响应里抽出上行短信验证需要的全部上下文（官方客户端 upsms/verify 的入参）。 */
 function mfaContextOf(data: Record<string, unknown>): MfaContext {
   const obj = (value: unknown): Record<string, unknown> =>
     value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {};
@@ -624,7 +630,7 @@ function mfaContextOf(data: Record<string, unknown>): MfaContext {
   };
 }
 
-/** upsms/verify 的设备参数走 query（对标端实测）。 */
+/** upsms/verify 的设备参数走 query（官方客户端实测）。 */
 function upsmsQuery(device: LoginDevice): string {
   const now = Date.now();
   return new URLSearchParams({
@@ -666,7 +672,7 @@ function upsmsQuery(device: LoginDevice): string {
 }
 
 /**
- * 上行短信验证（对标端在 2046 之后立刻调用）。
+ * 上行短信验证（官方客户端在 2046 之后立刻调用）。
  * body 参数与顺序都照抄实测抓包：biz_params 是 JSON 字符串，verify_ticket 传空串。
  */
 async function upsmsVerify(
@@ -779,7 +785,7 @@ export async function continueSmsLogin(
   }
 }
 
-/** MFA 通过后重试登录时，把 upsms 下发的 ticket 与 tag/key 一起带上（对标端 1303 字节的 body 就是多了这些）。 */
+/** MFA 通过后重试登录时，把 upsms 下发的 ticket 与 tag/key 一起带上（官方客户端 1303 字节的 body 就是多了这些）。 */
 function applyMfaParams(body: URLSearchParams, mfa: MfaContext | undefined): URLSearchParams {
   if (mfa === undefined || String(mfa.ticket ?? '') === '') return body;
   body.set('verify_ticket', String(mfa.ticket));

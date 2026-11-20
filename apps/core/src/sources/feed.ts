@@ -2,7 +2,7 @@
  * 推荐流：一屏一剧，上下滑切换。
  *
  * 数据用书城推荐（discover）的游标分页；每页再批量取一次详情，补上第一集，
- * 前端才能直接起播（对标端的 feed 条目本身就带 series+episode）。
+ * 前端才能直接起播（官方客户端的 feed 条目本身就带 series+episode）。
  *
  * tab：
  * - recommend：书城推荐

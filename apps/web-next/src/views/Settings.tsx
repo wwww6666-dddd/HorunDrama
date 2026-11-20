@@ -14,6 +14,7 @@ import {
   RELEASES_URL,
   checkUpdate,
   compareVersion,
+  copyToClipboard,
   openExternalUrl,
 } from '../app-info.ts';
 import {
@@ -56,6 +57,7 @@ export function Settings(): JSX.Element {
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [smsCodeKey, setSmsCodeKey] = useState('');
+  const [smsMfa, setSmsMfa] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [health, setHealth] = useState<Health | null>(null);
   const [updateBusy, setUpdateBusy] = useState(false);
@@ -162,6 +164,9 @@ export function Settings(): JSX.Element {
       if (res.ok) {
         setCountdown(60);
         if (res.smsCodeKey !== undefined) setSmsCodeKey(res.smsCodeKey);
+        // 需要上行短信时，发完短信后重新获取验证码；旧码一律作废
+        setCode('');
+        setSmsMfa(false);
       }
     } catch (err) {
       setAccountNote(`发送失败：${(err as Error).message}`);
@@ -178,10 +183,32 @@ export function Settings(): JSX.Element {
       setAccountNote(res.message);
       if (res.ok) {
         setCode('');
+        setSmsMfa(false);
         account.reload();
+      } else if (res.code === 2046) {
+        // MFA 上下文绑定原验证码；不能重新获取验证码
+        setSmsMfa(true);
       }
     } catch (err) {
       setAccountNote(`登录失败：${(err as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doContinueSms = async (): Promise<void> => {
+    setBusy(true);
+    setAccountNote('正在验证上行短信…');
+    try {
+      const res = await api.accountContinueSms(phone, code);
+      setAccountNote(res.message);
+      if (res.ok) {
+        setCode('');
+        setSmsMfa(false);
+        account.reload();
+      }
+    } catch (err) {
+      setAccountNote(`验证失败：${(err as Error).message}`);
     } finally {
       setBusy(false);
     }
@@ -721,9 +748,18 @@ export function Settings(): JSX.Element {
                 登录
               </button>
             </div>
+            {smsMfa && (
+              <button
+                className="btn"
+                disabled={busy || code.length < 4}
+                onClick={() => void doContinueSms()}
+              >
+                我已发送短信，继续验证
+              </button>
+            )}
             <p className="settings-hint">
               签名服务 {account.data.signerAvailable ? '在线' : '未启动（账号接口需要它）'} ·
-              手机号会按对标项目的方式做 XOR 编码后提交
+              手机号按官方接口要求编码后提交
             </p>
           </>
         )}
@@ -789,6 +825,31 @@ export function Settings(): JSX.Element {
               >
                 提 issue
               </a>
+            </p>
+            <p className="settings-hint">
+              <button
+                className="settings-link settings-link--button"
+                onClick={() => {
+                  void copyToClipboard(RELEASES_URL).then((ok) => {
+                    setUpdateTone(ok ? 'ok' : 'warn');
+                    setUpdateNote(ok ? '下载链接已复制，可粘贴到浏览器打开' : '复制失败，请手动选中链接');
+                  });
+                }}
+              >
+                复制下载链接
+              </button>
+              {' · '}
+              <button
+                className="settings-link settings-link--button"
+                onClick={() => {
+                  void copyToClipboard(FEEDBACK_URL).then((ok) => {
+                    setUpdateTone(ok ? 'ok' : 'warn');
+                    setUpdateNote(ok ? '反馈链接已复制，可粘贴到浏览器打开' : '复制失败，请手动选中链接');
+                  });
+                }}
+              >
+                复制反馈链接
+              </button>
             </p>
           </div>
           <button className="btn btn--ghost" disabled={updateBusy} onClick={() => void doCheckUpdate()}>

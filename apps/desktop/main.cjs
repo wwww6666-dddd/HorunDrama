@@ -14,9 +14,10 @@
  *   --shot=<png>    截图后退出（自测用，不需要人盯着屏幕）
  *   --dev           加载 Vite 开发服务器（热更新）
  */
-const { app, BrowserWindow, shell, Menu, ipcMain, session, dialog, screen } = require('electron');
+const { app, BrowserWindow, shell, Menu, ipcMain, session, dialog, screen, nativeTheme, net } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 
 /**
  * GUI 启动（双击 exe / 快捷方式）时没有控制台，往 stdout/stderr 写会 EPIPE。
@@ -623,6 +624,341 @@ ipcMain.handle('yimu:copy-text', (_e, text) => {
     return false;
   }
 });
+// ---------------------------------------------------------------- 自动更新
+// 参考成熟客户端的做法：后台下载完整包 → 用户点“立即重启更新” → 退出后由
+// 一个 cmd 脚本等待进程结束、解压覆盖程序目录、再启动新版本。数据目录不在
+// 更新包里，所以设置/登录/缓存都会保留。
+const UPDATE_MAX_BYTES = 420 * 1024 * 1024;
+
+/** 更新文件放在数据目录的 updates/，不污染安装目录。 */
+function updateDir() {
+  const root = dataRoot ?? app.getPath('userData');
+  const dir = path.join(root, 'updates');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** 只接受 GitHub 的 https 资源，避免把下载器变成任意文件下载器。 */
+function isAllowedUpdateUrl(raw) {
+  try {
+    const u = new URL(String(raw));
+    if (u.protocol !== 'https:') return false;
+    return (
+      u.hostname === 'github.com' ||
+      u.hostname.endsWith('.github.com') ||
+      u.hostname === 'githubusercontent.com' ||
+      u.hostname.endsWith('.githubusercontent.com')
+    );
+  } catch {
+    return false;
+  }
+}
+
+function safeUpdateName(name) {
+  const base = path.basename(String(name ?? '')).replace(/[^\w.\- ]+/g, '_').slice(-140);
+  return base === '' ? `HorunDrama-update-${Date.now()}.bin` : base;
+}
+
+function unlinkQuiet(file) {
+  try {
+    fs.unlinkSync(file);
+  } catch {
+    /* ignore */
+  }
+}
+
+function updaterUserAgent() {
+  return `HorunDrama/${app.getVersion()} updater`;
+}
+
+/**
+ * 优先用 Electron net.fetch（Chromium 网络栈，会走系统代理/系统证书），
+ * 失败再退回 Node fetch（无代理环境）。
+ *
+ * 2.0.2 的“fetch failed”就是 Node 直连 release-assets.githubusercontent.com
+ * 被网络重置；浏览器/Chromium 能走代理，但 Node 不会。
+ */
+async function fetchUpdate(url, init) {
+  if (net !== undefined && typeof net.fetch === 'function') {
+    try {
+      return await net.fetch(url, init);
+    } catch (err) {
+      console.warn('[update] net.fetch 失败，尝试 Node fetch:', err.message);
+    }
+  }
+  return fetch(url, init);
+}
+
+function progressSender(event, total) {
+  let received = 0;
+  let lastSent = 0;
+  return {
+    add(bytes) {
+      received += bytes;
+      const now = Date.now();
+      if (now - lastSent > 220) {
+        lastSent = now;
+        event.sender.send('yimu:update-progress', {
+          received,
+          total,
+          percent: total > 0 ? Math.min(1, received / total) : 0,
+        });
+      }
+    },
+    get received() {
+      return received;
+    },
+  };
+}
+
+/** 单连接下载（保持原来的兜底路径）。 */
+async function downloadSingle(url, part, payload, event) {
+  const res = await fetchUpdate(url, {
+    redirect: 'follow',
+    headers: { 'user-agent': updaterUserAgent() },
+    signal: AbortSignal.timeout(30 * 60 * 1000),
+  });
+  if (!res.ok || res.body === null) throw new Error(`下载失败 HTTP ${res.status}`);
+  const total = Number(res.headers.get('content-length') ?? payload?.size ?? 0);
+  const out = fs.createWriteStream(part);
+  const hash = crypto.createHash('sha256');
+  const progress = progressSender(event, total);
+  try {
+    for await (const chunk of res.body) {
+      const buf = Buffer.from(chunk);
+      progress.add(buf.length);
+      if (progress.received > UPDATE_MAX_BYTES) throw new Error('更新包超过大小限制');
+      hash.update(buf);
+      if (!out.write(buf)) await new Promise((resolve) => out.once('drain', resolve));
+    }
+    await new Promise((resolve, reject) => {
+      out.end(resolve);
+      out.on('error', reject);
+    });
+    return { received: progress.received, total, sha256: hash.digest('hex') };
+  } catch (err) {
+    out.destroy();
+    unlinkQuiet(part);
+    throw err;
+  }
+}
+
+/**
+ * 多连接 Range 下载（参考 MotrixNext/aria2 的分片方式）：
+ * 把文件切成 N 段并发请求，最后按顺序拼接并算 SHA-256。
+ * GitHub Release 的签名资源支持 Range，通常比单连接快 2~5 倍。
+ */
+async function downloadParallel(url, part, total, payload, event) {
+  const connections = total > 80 * 1024 * 1024 ? 6 : 4;
+  const chunkSize = Math.ceil(total / connections);
+  const progress = progressSender(event, total);
+  const chunkFiles = [];
+  try {
+    await Promise.all(
+      Array.from({ length: connections }, (_, i) => {
+        const start = i * chunkSize;
+        const end = Math.min(total - 1, start + chunkSize - 1);
+        const chunkFile = `${part}.${i}`;
+        chunkFiles.push(chunkFile);
+        return (async () => {
+          const res = await fetchUpdate(url, {
+            redirect: 'follow',
+            headers: {
+              range: `bytes=${start}-${end}`,
+              'user-agent': updaterUserAgent(),
+            },
+            signal: AbortSignal.timeout(30 * 60 * 1000),
+          });
+          if (res.status !== 206 || res.body === null) {
+            throw new Error(`分片下载失败 HTTP ${res.status}`);
+          }
+          const out = fs.createWriteStream(chunkFile);
+          try {
+            for await (const chunk of res.body) {
+              const buf = Buffer.from(chunk);
+              progress.add(buf.length);
+              if (progress.received > UPDATE_MAX_BYTES) throw new Error('更新包超过大小限制');
+              if (!out.write(buf)) await new Promise((resolve) => out.once('drain', resolve));
+            }
+            await new Promise((resolve, reject) => {
+              out.end(resolve);
+              out.on('error', reject);
+            });
+          } catch (err) {
+            out.destroy();
+            throw err;
+          }
+        })();
+      }),
+    );
+
+    if (progress.received !== total) {
+      throw new Error(`分片大小不完整（${progress.received}/${total}）`);
+    }
+
+    const out = fs.createWriteStream(part);
+    const hash = crypto.createHash('sha256');
+    for (const chunkFile of chunkFiles) {
+      for await (const chunk of fs.createReadStream(chunkFile)) {
+        const buf = Buffer.from(chunk);
+        hash.update(buf);
+        if (!out.write(buf)) await new Promise((resolve) => out.once('drain', resolve));
+      }
+    }
+    await new Promise((resolve, reject) => {
+      out.end(resolve);
+      out.on('error', reject);
+    });
+    return { received: progress.received, total, sha256: hash.digest('hex') };
+  } catch (err) {
+    for (const chunkFile of chunkFiles) unlinkQuiet(chunkFile);
+    unlinkQuiet(part);
+    throw err;
+  } finally {
+    for (const chunkFile of chunkFiles) unlinkQuiet(chunkFile);
+  }
+}
+
+/**
+ * 下载更新包到数据目录，边下边把进度发给渲染进程。
+ * 返回 { ok, path, size, sha256 }；失败返回 { ok:false, message }。
+ */
+ipcMain.handle('yimu:update-download', async (event, payload) => {
+  const url = String(payload?.url ?? '');
+  if (!isAllowedUpdateUrl(url)) return { ok: false, message: '更新地址不是 GitHub https 地址' };
+  const file = path.join(updateDir(), safeUpdateName(payload?.name));
+  const part = `${file}.part`;
+  try {
+    const knownSize = Number(payload?.size ?? 0);
+    if (fs.existsSync(file)) {
+      const size = fs.statSync(file).size;
+      if (knownSize === 0 || Math.abs(size - knownSize) <= 1024) {
+        event.sender.send('yimu:update-progress', { received: size, total: size, percent: 1 });
+        return { ok: true, path: file, size, sha256: '' };
+      }
+      unlinkQuiet(file);
+    }
+    unlinkQuiet(part);
+
+    let result;
+    if (knownSize >= 32 * 1024 * 1024) {
+      try {
+        result = await downloadParallel(url, part, knownSize, payload, event);
+      } catch (parallelErr) {
+        // 某些代理/CDN 不支持 Range 或返回 200：退回单连接，不要因此更新失败
+        console.warn('[update] 多连接下载失败，回退单连接:', parallelErr.message);
+        unlinkQuiet(part);
+        result = await downloadSingle(url, part, payload, event);
+      }
+    } else {
+      result = await downloadSingle(url, part, payload, event);
+    }
+
+    const expected = String(payload?.digest ?? '').replace(/^sha256:/i, '').toLowerCase();
+    if (expected !== '' && expected !== result.sha256) {
+      unlinkQuiet(part);
+      return { ok: false, message: 'SHA-256 校验失败，已删除下载文件' };
+    }
+    const expectedSize = Number(payload?.size ?? 0);
+    if (expectedSize > 0 && Math.abs(result.received - expectedSize) > 1024) {
+      unlinkQuiet(part);
+      return { ok: false, message: `下载不完整（${result.received}/${expectedSize} 字节）` };
+    }
+    unlinkQuiet(file);
+    fs.renameSync(part, file);
+    event.sender.send('yimu:update-progress', { received: result.received, total: result.received, percent: 1 });
+    return { ok: true, path: file, size: result.received, sha256: result.sha256 };
+  } catch (err) {
+    unlinkQuiet(part);
+    return { ok: false, message: (err).message };
+  }
+});
+
+/**
+ * 退出并应用更新。
+ *
+ * 更新包只包含程序文件（不含 data/），解压到临时目录后再 robocopy 覆盖，
+ * 这样下载/解压失败时不会先把现有程序弄坏。
+ */
+ipcMain.handle('yimu:update-install', async (_event, payload) => {
+  const file = path.resolve(String(payload?.path ?? ''));
+  const dir = path.resolve(updateDir());
+  const lowerFile = file.toLowerCase();
+  const lowerDir = `${dir}${path.sep}`.toLowerCase();
+  if (!lowerFile.startsWith(lowerDir) || !fs.existsSync(file)) {
+    return { ok: false, message: '更新包路径不合法或文件不存在' };
+  }
+  const appDir = path.dirname(app.getPath('exe'));
+  const launcher = path.join(appDir, 'HorunDrama.exe');
+  const isZip = /\.zip$/i.test(file);
+  const tmpDir = path.join(appDir, '.update-tmp');
+  const helper = path.join(dir, 'apply-update.cmd');
+  const lines = [
+    '@echo off',
+    'setlocal',
+    `set "PID=${process.pid}"`,
+    `set "APP_DIR=${appDir}"`,
+    `set "PKG=${file}"`,
+    `set "UPD_DIR=${dir}"`,
+    `set "TMP=${tmpDir}"`,
+    `set "LAUNCH=${launcher}"`,
+    ':wait',
+    'tasklist /FI "PID eq %PID%" 2>nul | find "%PID%" >nul',
+    'if not errorlevel 1 (',
+    '  timeout /t 1 /nobreak >nul',
+    '  goto wait',
+    ')',
+    'timeout /t 2 /nobreak >nul',
+  ];
+  if (isZip) {
+    lines.push(
+      'if exist "%TMP%" rmdir /s /q "%TMP%"',
+      'mkdir "%TMP%"',
+      'if exist "%SystemRoot%\\System32\\tar.exe" (',
+      '  "%SystemRoot%\\System32\\tar.exe" -xf "%PKG%" -C "%TMP%"',
+      ') else (',
+      '  powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath \'%PKG%\' -DestinationPath \'%TMP%\' -Force"',
+      ')',
+      'robocopy "%TMP%" "%APP_DIR%" /E /NFL /NDL /NJH /NJS /NP >nul',
+      'rmdir /s /q "%TMP%"',
+    );
+  } else {
+    lines.push('start "" /wait "%PKG%" /S');
+  }
+  // 更新成功/安装结束后清掉下载缓存，避免用户目录里长期堆着 100~200MB 的安装包
+  lines.push(
+    'del /q "%PKG%" 2>nul',
+    'del /q "%UPD_DIR%\\*.zip" 2>nul',
+    'del /q "%UPD_DIR%\\*.exe" 2>nul',
+    'del /q "%UPD_DIR%\\*.part" 2>nul',
+    'del /q "%UPD_DIR%\\*.7z" 2>nul',
+    'rmdir /s /q "%TMP%" 2>nul',
+  );
+  lines.push('start "" "%LAUNCH%"', 'del "%~f0"', '');
+  try {
+    fs.writeFileSync(helper, lines.join('\r\n'), 'utf8');
+    require('node:child_process')
+      .spawn('cmd.exe', ['/d', '/c', `"${helper}"`], { detached: true, stdio: 'ignore', windowsHide: true })
+      .unref();
+    setTimeout(() => app.quit(), 500);
+    return { ok: true, message: '正在退出并应用更新' };
+  } catch (err) {
+    return { ok: false, message: err.message };
+  }
+});
+
+/**
+ * 让 Windows 11 的 DWM 边框跟随应用主题。
+ *
+ * 无边框窗口在 Win11 下系统仍会画一圈细边框，颜色来自窗口 frame 的深浅。
+ * 主进程 nativeTheme 默认跟系统走，应用内切深色时边框仍是浅色，看起来就是
+ * 顶部一条白线。渲染进程切主题时同步过来，边框颜色才会和窗口一致。
+ */
+ipcMain.handle('yimu:set-theme', (_event, theme) => {
+  nativeTheme.themeSource = theme === 'light' ? 'light' : 'dark';
+  return true;
+});
+
 ipcMain.handle('yimu:toggle-maximize', () => {
   if (!mainWindow) return;
   if (mainWindow.isMaximized()) mainWindow.unmaximize();

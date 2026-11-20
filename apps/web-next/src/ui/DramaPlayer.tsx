@@ -4,18 +4,30 @@ import type { JSX } from 'react';
 import type Player from 'xgplayer';
 import { XgPlayer } from './XgPlayer.tsx';
 import { PlayerBarExtras } from './PlayerBarExtras.tsx';
+import type { DanmakuPrefs } from '../settings/danmaku.ts';
 
 export interface DramaPlayerExtras {
   episodeCount: number;
   qualities?: string[];
   quality?: string;
   definition?: string;
+  /** 控制条设置的倍速（面板里改） */
+  rate?: number;
+  onRate?: (value: number) => void;
+  autoPlayNext?: boolean;
+  onToggleAutoNext?: () => void;
+  skipIntroSec?: number;
+  skipOutroSec?: number;
+  onSkipIntro?: (value: number) => void;
+  onSkipOutro?: (value: number) => void;
+  danmakuEnabled: boolean;
+  danmakuPrefs: DanmakuPrefs;
+  onDanmakuPrefs: (patch: Partial<DanmakuPrefs>) => void;
+  danmakuText: string;
   onEpisodes: () => void;
   onQuality?: (value: string) => void;
   onPrev?: () => void;
   onNext?: () => void;
-  danmakuEnabled: boolean;
-  danmakuText: string;
   onToggleDanmaku: () => void;
   onDanmakuText: (value: string) => void;
   onSendDanmaku: () => void;
@@ -243,11 +255,21 @@ export function DramaPlayer({
           qualities={extras.qualities ?? []}
           quality={extras.quality ?? ''}
           definition={extras.definition}
+          rate={extras.rate ?? rate}
+          onRate={extras.onRate ?? (() => undefined)}
+          autoPlayNext={extras.autoPlayNext !== false}
+          onToggleAutoNext={extras.onToggleAutoNext ?? (() => undefined)}
+          skipIntroSec={extras.skipIntroSec ?? 0}
+          skipOutroSec={extras.skipOutroSec ?? 0}
+          onSkipIntro={extras.onSkipIntro ?? (() => undefined)}
+          onSkipOutro={extras.onSkipOutro ?? (() => undefined)}
+          danmakuEnabled={extras.danmakuEnabled}
+          danmakuPrefs={extras.danmakuPrefs}
+          onDanmakuPrefs={extras.onDanmakuPrefs}
           onEpisodes={extras.onEpisodes}
           onQuality={extras.onQuality ?? (() => undefined)}
           onPrev={extras.onPrev}
           onNext={extras.onNext}
-          danmakuEnabled={extras.danmakuEnabled}
           danmakuText={extras.danmakuText}
           onToggleDanmaku={extras.onToggleDanmaku}
           onDanmakuText={extras.onDanmakuText}
