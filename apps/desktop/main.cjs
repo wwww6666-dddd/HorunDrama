@@ -1108,9 +1108,74 @@ app.on('second-instance', () => {
   }
 });
 
+/**
+ * 安装版自检：桌面/开始菜单快捷方式 + 卸载登记。
+ *
+ * 为什么放在应用里做：
+ *   2.0.6/2.0.7 的安装器（electron-builder 的 NSIS）在这台机器上写不进 HKCU 和开始菜单，
+ *   装完没有快捷方式、设置→应用里也看不到 HorunDrama。安装器是提权/沙箱上下文跑的，
+ *   而应用本身一定以**真实用户**运行，所以由首次启动补齐最稳。
+ *
+ * 只对"安装版"生效：exe 同目录有 Uninstall HorunDrama.exe 才算安装版；
+ * 便携版（有 portable.txt）不写注册表、不建快捷方式。
+ */
+function ensureInstallRecords() {
+  try {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const exeDir = path.dirname(process.execPath);
+    if (fs.existsSync(path.join(exeDir, 'portable.txt'))) return;
+    const uninstaller = path.join(exeDir, 'Uninstall HorunDrama.exe');
+    if (!fs.existsSync(uninstaller)) return;
+
+    const userExe = fs.existsSync(path.join(exeDir, 'HorunDrama.exe'))
+      ? path.join(exeDir, 'HorunDrama.exe')
+      : process.execPath;
+    const link = { target: userExe, args: '--no-sandbox', cwd: exeDir, icon: userExe, iconIndex: 0 };
+
+    // 桌面 + 开始菜单（已存在就不覆盖，用户自己改过就别动）
+    try {
+      const desktop = path.join(app.getPath('desktop'), 'HorunDrama.lnk');
+      if (!fs.existsSync(desktop)) shell.writeShortcutLink(desktop, 'create', link);
+    } catch {
+      /* 桌面被重定向/无权限时忽略 */
+    }
+    try {
+      const programs = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'HorunDrama');
+      fs.mkdirSync(programs, { recursive: true });
+      const menu = path.join(programs, 'HorunDrama.lnk');
+      if (!fs.existsSync(menu)) shell.writeShortcutLink(menu, 'create', link);
+    } catch {
+      /* 忽略 */
+    }
+
+    // 卸载登记（设置 → 应用）。用 reg.exe 写，等价于用户手动写 HKCU。
+    const reg = (args) => {
+      try {
+        require('node:child_process').execFileSync('reg.exe', args, { windowsHide: true, stdio: 'ignore' });
+      } catch {
+        /* 注册表写失败不影响使用 */
+      }
+    };
+    reg(['add', 'HKCU\\Software\\HorunDrama', '/v', 'InstallLocation', '/t', 'REG_SZ', '/d', exeDir, '/f']);
+    const key = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\HorunDrama';
+    const set = (name, value) => reg(['add', key, '/v', name, '/t', 'REG_SZ', '/d', value, '/f']);
+    set('DisplayName', 'HorunDrama');
+    set('DisplayVersion', app.getVersion());
+    set('Publisher', 'Horun');
+    set('DisplayIcon', userExe);
+    set('InstallLocation', exeDir);
+    set('UninstallString', `"${uninstaller}"`);
+    set('QuietUninstallString', `"${uninstaller}" /S`);
+  } catch (err) {
+    console.warn('[desktop] 安装信息自检失败', err);
+  }
+}
+
 app.whenReady().then(async () => {
   showSplash();
   startSigner();
+  ensureInstallRecords();
   try {
     const origin = await boot();
     createWindow(origin);

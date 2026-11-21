@@ -34,14 +34,22 @@
 
 !macro customCheckAppRunning
   DetailPrint "关闭正在运行的 HorunDrama（按进程名）..."
-  FileOpen $9 "$TEMP\horun-hook.txt" w
-  FileWrite $9 "hook=ON$\r$\nINSTDIR=$INSTDIR$\r$\nLOCALAPPDATA=$LOCALAPPDATA$\r$\n"
-  FileClose $9
   nsExec::ExecToLog 'taskkill /f /im "HorunDrama.exe"'
   Pop $0
   nsExec::ExecToLog 'taskkill /f /im "HorunDramaCore.exe"'
   Pop $0
   Sleep 400
+!macroend
+
+; .onInit 第一行是 SetOutPath $INSTDIR，而 electron-builder 内置的"程序还在运行"检查
+; 用 PowerShell 的 $_.Path.StartsWith('$INSTDIR') 判断：$INSTDIR 为空串时恒真，
+; 会把整机进程都当成 HorunDrama。虽然我们已经用 customCheckAppRunning 覆盖了它，
+; 这里再兜一层：只要 $INSTDIR 为空就塞一个具体路径。
+; 注意只能用 preInit（在 .onInit 里）；customHeader 在全局代码区，不能放 StrCmp/If。
+!macro preInit
+  ${If} $INSTDIR == ""
+    StrCpy $INSTDIR "$LOCALAPPDATA\Programs\HorunDrama"
+  ${EndIf}
 !macroend
 
 !macro customInit
@@ -62,6 +70,30 @@
     DetailPrint "清理旧版安装目录（@horundesktop）..."
     RMDir /r "$LOCALAPPDATA\Programs\@horundesktop"
   legacyDone:
+
+  ; 升级时 electron-builder 会去执行"旧版本装的那份卸载器"。旧卸载器里是它自带的
+  ; "程序还在运行"检查（PowerShell 的 StartsWith('$INSTDIR')，$INSTDIR 空时恒真），
+  ; 会弹「HorunDrama 无法关闭」然后卡死——而旧卸载器是已经编译好的二进制，我们改不了。
+  ; 所以先把旧安装的登记项删掉，让 uninstallOldVersion 找不到卸载器、直接跳过。
+  ; 代价：如果旧版装在自定义目录，那个目录不会自动删（用户手动删即可）。
+  DeleteRegKey HKCU "${UNINSTALL_REGISTRY_KEY}"
+  !ifdef UNINSTALL_REGISTRY_KEY_2
+    DeleteRegKey HKCU "${UNINSTALL_REGISTRY_KEY_2}"
+  !endif
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\HorunDrama"
+
+  ; 旧版会记住上次的安装目录（InstallLocation）。如果记的是 2.0.6 那个算错的
+  ; @horundesktop，就把它清掉，否则新装还会回到那个目录。
+  ReadRegStr $R3 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${If} $R3 == "$LOCALAPPDATA\Programs\@horundesktop"
+    DeleteRegKey HKCU "${INSTALL_REGISTRY_KEY}"
+  ${EndIf}
+
+  ; 已经在 HorunDrama 目录里的旧安装：先删干净再装，避免残留文件（数据不在这里）
+  ${If} ${FileExists} "$LOCALAPPDATA\Programs\HorunDrama\HorunDrama.exe"
+    DetailPrint "清理旧版安装目录（HorunDrama）..."
+    RMDir /r "$LOCALAPPDATA\Programs\HorunDrama"
+  ${EndIf}
 !macroend
 
 !macro customInstall

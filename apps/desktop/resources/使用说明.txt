@@ -8,7 +8,7 @@
 
 ## 安装版
 
-双击 `HorunDrama Setup 2.0.7.exe` → **先选安装目录**（默认
+双击 `HorunDrama Setup 2.0.8.exe` → **先选安装目录**（默认
 `%LOCALAPPDATA%\Programs\HorunDrama`，可以改成 D 盘等任意位置）→ 一路「下一步」装完。
 装完用桌面或开始菜单里的「HorunDrama」启动。
 
@@ -20,7 +20,7 @@
 
 ## 绿色压缩包版（推荐发给别人）
 
-1. 把 `HorunDrama-2.0.7-win64-portable.zip` **解压到任意文件夹**（Windows 自带解压、7-Zip 都行）；
+1. 把 `HorunDrama-2.0.8-win64-portable.zip` **解压到任意文件夹**（Windows 自带解压、7-Zip 都行）；
 2. 双击里面的 `HorunDrama.exe`。
 
 压缩包里带 `portable.txt`，程序会自动把数据写在 **exe 同目录的 `data\`** 下，
