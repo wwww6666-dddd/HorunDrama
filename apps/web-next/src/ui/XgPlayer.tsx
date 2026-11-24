@@ -7,6 +7,8 @@ export interface XgPlayerProps {
   url: string;
   startAt: number;
   rate: number;
+  /** xgplayer 自带倍速菜单改动后回传，避免只改播放器内部、React 仍停在旧速率 */
+  onRate?: (value: number) => void;
   onReady?: (player: Player) => void;
   onTime?: (time: number, duration: number) => void;
   onEnded?: () => void;
@@ -24,6 +26,7 @@ export function XgPlayer({
   url,
   startAt,
   rate,
+  onRate,
   onReady,
   onTime,
   onEnded,
@@ -41,8 +44,8 @@ export function XgPlayer({
   // 事件监听里如果直接用创建时的闭包，就会一直调用"第一集那次渲染"的函数：
   // 自动下一集用它算 `当前集 + 1`，永远算回第一集的下一集，
   // 从第二集开始播完就再也切不动（只剩「重播」）。
-  const cbs = useRef({ rate, onReady, onTime, onEnded, onPlaying, onError });
-  cbs.current = { rate, onReady, onTime, onEnded, onPlaying, onError };
+  const cbs = useRef({ rate, onRate, onReady, onTime, onEnded, onPlaying, onError });
+  cbs.current = { rate, onRate, onReady, onTime, onEnded, onPlaying, onError };
 
   /** 首次创建时用的地址；之后的换集走 src 原地切换 */
   const firstUrl = useRef(url);
@@ -78,6 +81,38 @@ export function XgPlayer({
       closeVideoDblclick: true,
     });
     playerRef.current = player;
+    const mediaEl = player.media as HTMLVideoElement | null;
+
+    /**
+     * 换源时 media 会重新加载，部分浏览器/内核会把 playbackRate 归到 1x。
+     * 不能只依赖 xgplayer 的 canplay 回调（它有时先于我们的恢复逻辑触发），
+     * 所以直接在 media 的 loadedmetadata/canplay/playing 三个阶段补一次。
+     * 只在 pendingApply（刚换集）期间做，避免用户手动切倍速后被覆盖。
+     */
+    const restorePendingRate = (): void => {
+      if (!pendingApply.current || mediaEl === null) return;
+      const next = cbs.current.rate;
+      try {
+        mediaEl.defaultPlaybackRate = next;
+        mediaEl.playbackRate = next;
+      } catch {
+        /* 忽略倍速恢复失败 */
+      }
+    };
+    mediaEl?.addEventListener('loadedmetadata', restorePendingRate);
+    mediaEl?.addEventListener('canplay', restorePendingRate);
+    mediaEl?.addEventListener('playing', restorePendingRate);
+
+    /** xgplayer 自带倍速菜单修改的是 player.playbackRate，必须回传给 React 状态。 */
+    const reportRate = (): void => {
+      // 换源加载期间可能短暂触发 ratechange（默认速率），此时不能把它当成用户操作。
+      if (pendingApply.current) return;
+      const media = player.media as HTMLVideoElement | null;
+      const next = media?.playbackRate;
+      if (typeof next !== 'number' || !Number.isFinite(next) || next <= 0) return;
+      if (Math.abs(next - cbs.current.rate) > 0.001) cbs.current.onRate?.(next);
+    };
+    player.on('ratechange', reportRate);
 
     // 注意：单击/双击不在这里处理。DramaPlayer 已经在容器上做了
     // （带 target 过滤），两边都绑会导致"双击进全屏又立刻退出/暂停"。
@@ -156,6 +191,10 @@ export function XgPlayer({
 
     return () => {
       player.root?.removeEventListener('wheel', onWheel, false);
+      mediaEl?.removeEventListener('loadedmetadata', restorePendingRate);
+      mediaEl?.removeEventListener('canplay', restorePendingRate);
+      mediaEl?.removeEventListener('playing', restorePendingRate);
+      player.off('ratechange', reportRate);
       playerRef.current = null;
       try {
         player.destroy();
@@ -182,6 +221,14 @@ export function XgPlayer({
     const current = media.getAttribute('src') ?? '';
     if (current === url) return;
     pendingApply.current = true;
+    // 先把 defaultPlaybackRate 设好，再 load；否则新 media 的默认速率可能回到 1x。
+    try {
+      const nextRate = cbs.current.rate;
+      media.defaultPlaybackRate = nextRate;
+      media.playbackRate = nextRate;
+    } catch {
+      /* 忽略 */
+    }
     try {
       player.pause();
     } catch {

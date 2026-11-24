@@ -2,7 +2,7 @@
   "name": "@horun/desktop",
   "productName": "HorunDrama",
   "private": true,
-  "version": "2.0.13",
+  "version": "2.0.15",
   "description": "HorunDrama · Windows 桌面端",
   "type": "module",
   "main": "main.cjs",

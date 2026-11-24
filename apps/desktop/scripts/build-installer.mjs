@@ -7,17 +7,19 @@
 // 用法：node scripts/build-installer.mjs [--version x.y.z]
 //   前置：`pnpm --filter @horun/desktop run pack` 生成 release/win-unpacked（无需代码签名）。
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createUninstallManifest } from './uninstall-manifest.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktop = resolve(here, '..');
+const repoRoot = resolve(desktop, '..', '..');
 const release = join(desktop, 'release');
 const payload = join(release, 'build', 'win-unpacked');
 const script = join(desktop, 'installer', 'setup.nsi');
 const icon = join(desktop, 'resources', 'icon.ico');
+const complianceFiles = ['LICENSE', 'NOTICE.md', 'FFMPEG-SOURCE.md'];
 
 const vi = process.argv.indexOf('--version');
 const version =
@@ -55,6 +57,14 @@ cpSync(payload, cleanPayload, {
     return true;
   },
 });
+
+// GPL/FFmpeg 合规文件必须进入安装包根目录：setup.nsi 会显示 LICENSE，
+// 卸载清单也会包含它们。绿色包由 build-portable.ps1 复制同一组文件。
+for (const name of complianceFiles) {
+  const from = join(repoRoot, name);
+  if (!existsSync(from)) throw new Error(`缺少合规文件：${from}`);
+  copyFileSync(from, join(cleanPayload, name));
+}
 
 // 生成仅删除安装包自带文件的卸载片段。安装路径允许指向用户已有目录，
 // 因此卸载不能对 $INSTDIR 做递归删除。

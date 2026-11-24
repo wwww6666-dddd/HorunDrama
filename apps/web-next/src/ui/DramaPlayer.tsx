@@ -241,6 +241,7 @@ export function DramaPlayer({
         url={url}
         startAt={startAt}
         rate={rate}
+        onRate={extras?.onRate}
         onReady={handleReady}
         onTime={(t, d) => onTime?.(t, d)}
         onPlaying={(v) => onPlaying?.(v)}

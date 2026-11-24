@@ -7,8 +7,13 @@
 ;   3) 它的"程序还在运行"检查用 PowerShell 的 $_.Path.StartsWith('$INSTDIR')，
 ;      $INSTDIR 为空时恒真 → 会把整机进程当成 HorunDrama 去强杀，杀不完就弹
 ;      「HorunDrama 无法关闭」卡死安装。
-; 这个脚本只做最基本的事，全部按 **当前用户** 安装（不需要管理员、不弹 UAC）：
-;   选择目录 → 检查目标程序文件是否被占用 → 复制文件 → 创建快捷方式和卸载登记。
+; 这个脚本默认按 **当前用户** 安装，默认目录不弹 UAC：
+;   显示 GPL 许可证 → 选择目录 → 检查目标目录可写 → 检查目标程序文件是否被占用 →
+;   复制文件 → 创建快捷方式和卸载登记。
+; 参考 electron-builder / Unsloth Desktop 的成熟做法：不全局要求管理员；先对
+; $INSTDIR 做一次真实写入探针，只有目标目录确实不可写且当前不是管理员时，才用
+; ShellExecute 的 runas 谓词重启自身并要求一次 UAC，重启后带 /RELAUNCH 防止循环。
+; 这样低完整性启动、受控文件夹访问和自定义受保护目录不会被误判为“所有文件都写不进去”。
 ;
 ; 编译（scripts/build-installer.mjs 调用）：
 ;   makensis /INPUTCHARSET UTF8 -DPAYLOAD=<win-unpacked> -DVERSION=x.y.z -DOUTFILE=<exe> -DICON=<ico> setup.nsi
@@ -18,7 +23,10 @@ Unicode true
 SetCompressor /SOLID lzma
 SetCompressorDictSize 32
 RequestExecutionLevel user
+; 不让 NSIS 在写失败时静默选择 Ignore，避免“安装完成但文件缺失”。
+AllowSkipFiles off
 BrandingText "HorunDrama ${VERSION}"
+Var RELAUNCHED
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
@@ -39,6 +47,7 @@ InstallDirRegKey HKCU "${APP_KEY}" "InstallLocation"
 !define MUI_ABORTWARNING
 
 !insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_LICENSE "${PAYLOAD}\LICENSE"
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_NAME}.exe"
@@ -48,17 +57,59 @@ InstallDirRegKey HKCU "${APP_KEY}" "InstallLocation"
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "SimpChinese"
 
-Section "安装" INSTALL_SECTION
-  ; 先确认用户选择的目录确实可写，避免 File /r 失败后出现 Retry/Ignore。
-  CreateDirectory "$INSTDIR"
+Function .onInit
+  StrCpy $RELAUNCHED "0"
+  ${GetParameters} $R0
+  ${GetOptions} $R0 "/RELAUNCH" $R1
+  ; GetOptions 找不到时设置错误位；找到了就清除错误位。
+  IfErrors +2 0
+    StrCpy $RELAUNCHED "1"
+FunctionEnd
+
+; 真实写入探针只用于判断是否需要一次 UAC 重启：
+; - 默认 %LOCALAPPDATA% 在普通桌面令牌下可写，不会弹 UAC；
+; - 低完整性/受保护目录在普通令牌下不可写，重启到管理员令牌后再装；
+; - /RELAUNCH 已重启过一次仍失败时直接给出明确错误，绝不循环。
+Function EnsureInstallDirWritable
   ClearErrors
-  FileOpen $R0 "$INSTDIR\.horundrama-write-test" w
-  IfErrors targetNotWritable
-  FileClose $R0
-  Delete "$INSTDIR\.horundrama-write-test"
+  SetOutPath "$INSTDIR"
+  IfErrors ensureDirFailed
+
+  FileOpen $0 "$INSTDIR\.horundrama-write-probe" w
+  IfErrors ensureDirFailed
+  FileWrite $0 "probe"
+  FileClose $0
+  Delete "$INSTDIR\.horundrama-write-probe"
+  Return
+
+ensureDirFailed:
+  Delete "$INSTDIR\.horundrama-write-probe"
+
+  ${If} $RELAUNCHED == "1"
+    MessageBox MB_ICONSTOP|MB_OK "安装目录仍不可写：$INSTDIR$\r$\n$\r$\n请改选当前用户有写入权限的目录，或以管理员身份运行安装程序。" /SD IDOK
+    Abort
+  ${EndIf}
+
+  System::Call 'shell32::IsUserAnAdmin() i .r0'
+  ${If} $0 == 1
+    MessageBox MB_ICONSTOP|MB_OK "当前已是管理员权限，但仍无法写入：$INSTDIR$\r$\n$\r$\n请检查目录权限、只读属性或安全软件拦截。" /SD IDOK
+    Abort
+  ${EndIf}
+
+  MessageBox MB_ICONINFORMATION|MB_TOPMOST|MB_OK "安装目录需要管理员权限，安装程序将以管理员身份重新启动。$\r$\n$\r$\n$INSTDIR" /SD IDOK
+  ExecShell "runas" "$EXEPATH" "$CMDLINE /RELAUNCH /D=$INSTDIR"
+  Quit
+FunctionEnd
+
+Section "安装" INSTALL_SECTION
+  Call EnsureInstallDirWritable
 
   ; 只移除两个可能被旧进程锁定的程序文件；绝不递归删除整个目标目录，
   ; 以免误删用户放在安装目录旁的数据或文件。
+  ; 旧版安装可能留下隐藏的卸载清单；它是编译期文件，不属于运行载荷。
+  SetFileAttributes "$INSTDIR\.horundrama-uninstall.nsh" NORMAL
+  Delete "$INSTDIR\.horundrama-uninstall.nsh"
+  Delete "$INSTDIR\horundrama-uninstall.nsh"
   IfFileExists "$INSTDIR\${APP_NAME}.exe" 0 mainExeReady
   SetFileAttributes "$INSTDIR\${APP_NAME}.exe" NORMAL
   Delete "$INSTDIR\${APP_NAME}.exe"
@@ -71,9 +122,6 @@ mainExeReady:
 coreExeReady:
   Goto filesReady
 
-targetNotWritable:
-  MessageBox MB_ICONSTOP|MB_OK "无法写入安装目录：$INSTDIR。请选择当前用户有写入权限的目录。"
-  Abort
 mainExeLocked:
   MessageBox MB_ICONSTOP|MB_OK "无法替换 $INSTDIR\${APP_NAME}.exe。请关闭 HorunDrama 后重试。"
   Abort
@@ -82,8 +130,18 @@ coreExeLocked:
   Abort
 filesReady:
 
+  ClearErrors
   SetOutPath "$INSTDIR"
-  File /r "${PAYLOAD}\*.*"
+  ; .horundrama-uninstall.nsh 只用于编译卸载段，不能复制到安装目录：
+  ; 旧版把它当普通载荷复制，遇到只读/隐藏残留时会弹“不能打开要写入的文件”。
+  ; /nonfatal 让真正的权限/占用错误落到下面的 IfErrors，而不是卡在 Retry/Ignore 对话框。
+  File /nonfatal /r /x ".horundrama-uninstall.nsh" "${PAYLOAD}\*.*"
+  IfErrors copyFailed
+  Goto filesCopied
+copyFailed:
+  MessageBox MB_ICONSTOP|MB_OK "复制安装文件失败：$INSTDIR。$\r$\n$\r$\n请改选当前用户有写入权限的目录（推荐默认的 %LOCALAPPDATA%\Programs\HorunDrama），或关闭“受控文件夹访问”/杀毒软件后重试。"
+  Abort
+filesCopied:
 
   ; 核心程序设为隐藏，资源管理器里只看到一个 HorunDrama.exe
   ; （用 attrib 而不是 System::Call：System::Call 写错语法会让整个 Section 直接中断，

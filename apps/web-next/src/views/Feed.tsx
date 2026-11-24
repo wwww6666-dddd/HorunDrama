@@ -8,6 +8,7 @@ import { DramaPlayer } from '../ui/DramaPlayer.tsx';
 import { useDanmaku } from '../hooks/useDanmaku.ts';
 import { useTilt } from '../hooks/useTilt.ts';
 import { readDanmakuPrefs, writeDanmakuPrefs, type DanmakuPrefs } from '../settings/danmaku.ts';
+import { readPlaybackRate, writePlaybackRate } from '../settings/playback.ts';
 import type Player from 'xgplayer';
 import { IconDownload } from '../ui/icons.tsx';
 
@@ -92,7 +93,7 @@ export function Feed(): JSX.Element {
   /** 推荐页容器：全屏宿主 + 闲置隐藏的挂载点 */
   const feedRootRef = useRef<HTMLDivElement | null>(null);
   /** 播放设置（和剧场页共用同一份 settings.json） */
-  const [rate, setRate] = useState(1);
+  const [rate, setRate] = useState<number>(() => readPlaybackRate() ?? 1);
   const [playPrefs, setPlayPrefs] = useState({ autoPlayNext: true, skipIntroSec: 0, skipOutroSec: 0 });
   const [chromeVisible, setChromeVisible] = useState(true);
   const chromeTimer = useRef<number | null>(null);
@@ -116,7 +117,12 @@ export function Feed(): JSX.Element {
       .settings()
       .then((s) => {
         if (!alive) return;
-        setRate(s.defaultSpeed);
+        const localRate = readPlaybackRate();
+        if (localRate === null) {
+          setRate(writePlaybackRate(s.defaultSpeed));
+        } else {
+          setRate(localRate);
+        }
         setPlayPrefs({
           autoPlayNext: s.autoPlayNext,
           skipIntroSec: s.skipIntroSec,
@@ -520,8 +526,9 @@ export function Feed(): JSX.Element {
               rate={rate}
               playPrefs={playPrefs}
               onRate={(value) => {
-                setRate(value);
-                patchPlayPrefs({ defaultSpeed: value });
+                const next = writePlaybackRate(value);
+                setRate(next);
+                patchPlayPrefs({ defaultSpeed: next });
               }}
               onToggleAutoNext={() => patchPlayPrefs({ autoPlayNext: !playPrefs.autoPlayNext })}
               onSkipIntro={(value) => patchPlayPrefs({ skipIntroSec: value })}

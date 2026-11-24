@@ -25,6 +25,7 @@ import {
   writeDanmakuPrefs,
   type DanmakuPrefs,
 } from '../settings/danmaku.ts';
+import { writePlaybackRate } from '../settings/playback.ts';
 
 function mb(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -236,6 +237,7 @@ export function Settings(): JSX.Element {
     setNote('');
     try {
       const next = await api.saveSettings(draft);
+      writePlaybackRate(next.defaultSpeed);
       setDraft(next);
       cache.reload();
       setNote('已保存');
@@ -326,6 +328,7 @@ export function Settings(): JSX.Element {
             options={[0.75, 1, 1.25, 1.5, 2].map((n) => ({ value: String(n), label: `${n}×` }))}
             onChange={(value) => {
               const speed = Number(value);
+              writePlaybackRate(speed);
               setDraft((d) => (d === null ? d : { ...d, defaultSpeed: speed }));
             }}
           />

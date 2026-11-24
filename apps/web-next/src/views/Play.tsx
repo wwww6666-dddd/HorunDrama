@@ -10,6 +10,7 @@ import { DanmakuLayer } from '../ui/DanmakuLayer.tsx';
 import { DramaPlayer } from '../ui/DramaPlayer.tsx';
 import { useDanmaku } from '../hooks/useDanmaku.ts';
 import { readDanmakuPrefs, writeDanmakuPrefs, type DanmakuPrefs } from '../settings/danmaku.ts';
+import { readPlaybackRate, writePlaybackRate } from '../settings/playback.ts';
 import { IconBack, IconDownload } from '../ui/icons.tsx';
 
 interface PlayPrefs {
@@ -126,7 +127,7 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
   /** 「分享续播」的起播点只认一次（换清晰度/重取流时不能把人拽回分享点） */
   const shareSeekUsed = useRef('');
   const [quality, setQuality] = useState<string>(() => localStorage.getItem('horun-quality') ?? '1080p');
-  const [rate, setRate] = useState(1);
+  const [rate, setRate] = useState<number>(() => readPlaybackRate() ?? 1);
   /** 后台高清转好了：换成它的地址（位置不变） */
   const [upgrade, setUpgrade] = useState<{ url: string; definition: string } | null>(null);
   const [upgradeJobId, setUpgradeJobId] = useState('');
@@ -179,7 +180,15 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
           skipIntroSec: s.skipIntroSec,
           skipOutroSec: s.skipOutroSec,
         });
-        setRate(s.defaultSpeed);
+        // 本机已有倍速优先：播放器刚改过时，服务端保存可能还在途中；
+        // 没有本机记录才用服务端默认值，并把它缓存下来。
+        const localRate = readPlaybackRate();
+        if (localRate === null) {
+          const serverRate = writePlaybackRate(s.defaultSpeed);
+          setRate(serverRate);
+        } else {
+          setRate(localRate);
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -574,6 +583,13 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
   const patchPrefs = (patch: Partial<PlayPrefs>): void => {
     setPrefs((prev) => (prev === null ? prev : { ...prev, ...patch }));
     void api.saveSettings(patch).catch(() => flash('设置保存失败（只在本页生效）'));
+  };
+
+  /** 倍速：先写本机 localStorage，再更新状态和核心设置，切集/重开都不会回落。 */
+  const changeRate = (value: number): void => {
+    const next = writePlaybackRate(value);
+    setRate(next);
+    patchPrefs({ defaultSpeed: next });
   };
 
   const { items: danmakuItems } = useDanmaku({
@@ -972,10 +988,7 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
             quality,
             definition: playingDefinition,
             rate,
-            onRate: (value) => {
-              setRate(value);
-              patchPrefs({ defaultSpeed: value });
-            },
+            onRate: changeRate,
             autoPlayNext: prefs?.autoPlayNext !== false,
             onToggleAutoNext: () => patchPrefs({ autoPlayNext: prefs?.autoPlayNext === false }),
             skipIntroSec: prefs?.skipIntroSec ?? 0,
