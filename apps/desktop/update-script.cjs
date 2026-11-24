@@ -101,9 +101,11 @@ function createUpdateScript({ pid, appDir, file, updateDir, tmpDir, launcher, ba
     'del /q "%PKG%" 2>nul',
     'del /q "%PKG%.json" 2>nul',
     'start "" "%LAUNCH%"',
-    ':log',
-    '>>"%LOG%" echo [%date% %time%] %*',
     'exit /b 0',
+    ':log',
+    'set "LOG_RC=%errorlevel%"',
+    '>>"%LOG%" echo [%date% %time%] %*',
+    'exit /b %LOG_RC%',
     '',
   ];
   return lines.join('\r\n');

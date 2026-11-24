@@ -31,6 +31,8 @@ test('update script validates zip paths and backs up the previous app before ove
   assert.match(script, /set "PING=%SystemRoot%\\System32\\ping\.exe"/);
   assert.match(script, /"%PING%" 127\.0\.0\.1 -n 2 >nul/);
   assert.match(script, /WAIT_TIMEOUT/);
+  assert.match(script, /set "LOG_RC=%errorlevel%"/);
+  assert.match(script, /exit \/b %LOG_RC%/);
   assert.match(script, /"%ROBOCOPY%"/);
   assert.doesNotMatch(script, /^powershell -NoProfile/m);
   assert.doesNotMatch(script, /^robocopy /m);
