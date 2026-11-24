@@ -65,6 +65,10 @@ export function mediaPathFor(
   return path.join(mediaDir(), `${episodeId}-${safe}${suffix}${variant}.mp4`);
 }
 
+function isManagedMediaFile(name: string): boolean {
+  return /^\d{8,25}-[0-9a-z]+(?:-(?:standard|strong))?(?:-hevc)?\.mp4(?:\.(?:part|enc)\.mp4)?$/i.test(name);
+}
+
 /**
  * 找这一集已经转好的文件（不限定清晰度）。
  *
@@ -597,7 +601,7 @@ export async function pruneMediaCache(limitBytes: number): Promise<void> {
     const names = await fsp.readdir(dir);
     const files = await Promise.all(
       names
-        .filter((n) => n.endsWith('.mp4'))
+        .filter(isManagedMediaFile)
         .map(async (n) => {
           const p = path.join(dir, n);
           const st = await fsp.stat(p);
@@ -624,7 +628,7 @@ export async function mediaCacheStats(): Promise<{ dir: string; count: number; b
   let bytes = 0;
   const names = await fsp.readdir(dir).catch(() => [] as string[]);
   for (const n of names) {
-    if (!n.endsWith('.mp4')) continue;
+    if (!isManagedMediaFile(n)) continue;
     try {
       const st = await fsp.stat(path.join(dir, n));
       count += 1;
@@ -636,7 +640,7 @@ export async function mediaCacheStats(): Promise<{ dir: string; count: number; b
   return { dir, count, bytes };
 }
 
-/** 清空转码缓存（含残留的 .enc 中间文件）。 */
+/** 清理应用生成的转码缓存文件；不触碰目录和用户放在缓存目录中的其他文件。 */
 export async function clearMediaCache(): Promise<{ removed: number; bytes: number }> {
   const dir = mediaDir();
   let removed = 0;
@@ -645,7 +649,9 @@ export async function clearMediaCache(): Promise<{ removed: number; bytes: numbe
   for (const n of names) {
     const p = path.join(dir, n);
     try {
-      const st = await fsp.stat(p);
+      if (!isManagedMediaFile(n)) continue;
+      const st = await fsp.lstat(p);
+      if (!st.isFile()) continue;
       await fsp.rm(p, { force: true });
       removed += 1;
       bytes += st.size;

@@ -7,6 +7,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { timingSafeEqual } from 'node:crypto';
 import { HOST, PORT, DATA_ROOT, VERSION, WEB_DIST } from './config.ts';
 import { Router } from './http/router.ts';
 import { registerRoutes } from './http/api.ts';
@@ -49,12 +50,49 @@ function serveStatic(res: http.ServerResponse, pathname: string): void {
 
 const router = new Router();
 registerRoutes(router);
+const apiToken = process.env.HORUN_API_TOKEN ?? '';
+const expectedHost = `${HOST}:${PORT}`.toLowerCase();
+const allowedOrigins = new Set([`http://${HOST}:${PORT}`]);
+const allowedHosts = new Set([expectedHost]);
+if (process.env.HORUN_DEV === '1') {
+  allowedOrigins.add('http://127.0.0.1:5274');
+  allowedOrigins.add('http://localhost:5274');
+  allowedHosts.add('127.0.0.1:5274');
+  allowedHosts.add('localhost:5274');
+}
+
+function authorized(req: http.IncomingMessage): boolean {
+  if (apiToken === '') return true;
+  const cookie = req.headers.cookie ?? '';
+  const cookieToken = cookie.match(/(?:^|;\s*)horun_token=([^;]+)/)?.[1] ?? '';
+  const headerToken = req.headers['x-horun-token'];
+  const supplied = typeof headerToken === 'string' ? headerToken : cookieToken;
+  const expected = Buffer.from(apiToken);
+  const actual = Buffer.from(supplied);
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
 
 const server = http.createServer((req, res) => {
   const method = req.method ?? 'GET';
   const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
 
   if (url.pathname.startsWith('/api/')) {
+    if (!allowedHosts.has((req.headers.host ?? '').toLowerCase())) {
+      res.writeHead(403, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end('{"ok":false,"code":"bad_host","message":"拒绝非本机 Host"}');
+      return;
+    }
+    const origin = req.headers.origin;
+    if (origin !== undefined && !allowedOrigins.has(origin)) {
+      res.writeHead(403, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end('{"ok":false,"code":"bad_origin","message":"拒绝跨来源请求"}');
+      return;
+    }
+    if (!authorized(req)) {
+      res.writeHead(401, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end('{"ok":false,"code":"unauthorized","message":"缺少有效的本机应用令牌"}');
+      return;
+    }
     const hit = router.match(method, url.pathname);
     if (hit === null) {
       const body = JSON.stringify({ ok: false, code: 'no_route', message: `没有这个接口: ${url.pathname}` });

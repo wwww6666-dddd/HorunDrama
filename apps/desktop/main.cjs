@@ -247,6 +247,7 @@ function startSigner() {
 let mainWindow = null;
 let coreProc = null;
 let serverOrigin = '';
+let apiToken = '';
 
 /**
  * 启动新核心（apps/core）。
@@ -258,6 +259,7 @@ async function boot() {
   const entry = coreEntry();
   const port = Number(process.env.HORUN_PORT ?? 5880);
   const origin = `http://127.0.0.1:${port}`;
+  apiToken = app.isPackaged ? crypto.randomBytes(32).toString('hex') : '';
 
   // 打包后 ffmpeg 在 resources/ffmpeg；显式传给核心，免得它去猜路径
   const packagedFfmpeg = path.join(process.resourcesPath ?? '', 'ffmpeg', 'ffmpeg.exe');
@@ -268,6 +270,8 @@ async function boot() {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
       HORUN_PORT: String(port),
+      ...(IS_DEV ? { HORUN_DEV: '1' } : {}),
+      ...(apiToken === '' ? {} : { HORUN_API_TOKEN: apiToken }),
       ...ffmpegEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -282,7 +286,10 @@ async function boot() {
 
   for (let i = 0; i < 120; i += 1) {
     try {
-      const res = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(1000) });
+      const res = await fetch(`${origin}/api/health`, {
+        headers: apiToken === '' ? undefined : { 'x-horun-token': apiToken },
+        signal: AbortSignal.timeout(1000),
+      });
       if (res.ok) {
         serverOrigin = origin;
         console.log('[desktop] 核心已就绪:', origin, '| webDist:', webDist());
@@ -890,6 +897,7 @@ ipcMain.handle('yimu:update-install', async (_event, payload) => {
   }
   const appDir = path.dirname(app.getPath('exe'));
   const launcher = path.join(appDir, 'HorunDrama.exe');
+  const keepPortableMarker = fs.existsSync(path.join(appDir, 'portable.txt'));
   const isZip = /\.zip$/i.test(file);
   const tmpDir = path.join(appDir, '.update-tmp');
   const helper = path.join(dir, 'apply-update.cmd');
@@ -902,6 +910,7 @@ ipcMain.handle('yimu:update-install', async (_event, payload) => {
     `set "UPD_DIR=${dir}"`,
     `set "TMP=${tmpDir}"`,
     `set "LAUNCH=${launcher}"`,
+    `set "KEEP_PORTABLE=${keepPortableMarker ? '1' : '0'}"`,
     ':wait',
     'tasklist /FI "PID eq %PID%" 2>nul | find "%PID%" >nul',
     'if not errorlevel 1 (',
@@ -920,6 +929,7 @@ ipcMain.handle('yimu:update-install', async (_event, payload) => {
       '  powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath \'%PKG%\' -DestinationPath \'%TMP%\' -Force"',
       ')',
       'robocopy "%TMP%" "%APP_DIR%" /E /NFL /NDL /NJH /NJS /NP >nul',
+      'if "%KEEP_PORTABLE%"=="0" del /q "%APP_DIR%\\portable.txt" 2>nul',
       'rmdir /s /q "%TMP%"',
     );
   } else {
@@ -1178,6 +1188,16 @@ app.whenReady().then(async () => {
   ensureInstallRecords();
   try {
     const origin = await boot();
+    if (apiToken !== '') {
+      await session.defaultSession.cookies.set({
+        url: origin,
+        name: 'horun_token',
+        value: apiToken,
+        path: '/',
+        httpOnly: true,
+        sameSite: 'strict',
+      });
+    }
     createWindow(origin);
   } catch (err) {
     console.error('[desktop] 启动失败', err);
