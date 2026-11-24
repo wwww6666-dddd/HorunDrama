@@ -5,11 +5,11 @@
 // 它的"程序还在运行"检查用 StartsWith($INSTDIR)（空串时恒真）会卡死安装。
 //
 // 用法：node scripts/build-installer.mjs [--version x.y.z]
-//   前置：`pnpm --filter @horun/desktop run pack` 生成 release/win-unpacked（exe 已签名），
-//         且 win-unpacked 里**没有** portable.txt / 使用说明.txt。
+//   前置：`pnpm --filter @horun/desktop run pack` 生成 release/win-unpacked（无需代码签名）。
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -27,11 +27,21 @@ const version =
 const outFile = join(release, `HorunDrama Setup ${version}.exe`);
 
 if (!existsSync(payload)) throw new Error(`payload missing: ${payload}（先跑 pnpm --filter @horun/desktop run pack）`);
-for (const forbidden of ['portable.txt', '使用说明.txt']) {
-  if (existsSync(join(payload, forbidden))) {
-    throw new Error(`win-unpacked 里有 ${forbidden}：安装包不能带便携标记/说明书，先删掉`);
-  }
-}
+const cleanPayload = mkdtempSync(join(tmpdir(), 'horundrama-installer-'));
+
+// electron-builder 的 --dir 会复用 win-unpacked，旧便携版运行数据可能残留在里面。
+// 从干净副本制作安装器，确保不把本机数据库、缓存或便携标记带进安装包。
+cpSync(payload, cleanPayload, {
+  recursive: true,
+  filter(source) {
+    const relative = source.slice(payload.length).replaceAll('\\', '/').replace(/^\//, '');
+    if (relative === '') return true;
+    if (relative === 'data' || relative.startsWith('data/')) return false;
+    if (relative === 'portable.txt' || relative === '使用说明.txt') return false;
+    if (relative === 'resources/使用说明.txt') return false;
+    return true;
+  },
+});
 
 /** makensis 用 electron-builder 缓存里的那份（打包机不一定单独装了 NSIS）。 */
 function findMakensis() {
@@ -61,15 +71,19 @@ console.log(`[installer] makensis = ${makensis}`);
 console.log(`[installer] payload  = ${payload}`);
 console.log(`[installer] version  = ${version}`);
 
-rmSync(outFile, { force: true });
-const started = Date.now();
-const res = spawnSync(
-  makensis,
-  ['/INPUTCHARSET', 'UTF8', `/DPAYLOAD=${payload}`, `/DVERSION=${version}`, `/DOUTFILE=${outFile}`, `/DICON=${icon}`, script],
-  { stdio: 'inherit', cwd: desktop },
-);
-if (res.status !== 0) throw new Error(`makensis failed: ${res.status}`);
-if (!existsSync(outFile)) throw new Error(`makensis 说成功了但没产物：${outFile}`);
-const sizeMb = (statSync(outFile).size / 1024 / 1024).toFixed(1);
-console.log(`[installer] ok → ${outFile}（${sizeMb}MB，${((Date.now() - started) / 1000).toFixed(0)}s）`);
-console.log(`[installer] 记得签名：powershell -File scripts/sign-release.ps1 -Version ${version}`);
+try {
+  rmSync(outFile, { force: true });
+  const started = Date.now();
+  const res = spawnSync(
+    makensis,
+    ['/INPUTCHARSET', 'UTF8', `/DPAYLOAD=${cleanPayload}`, `/DVERSION=${version}`, `/DOUTFILE=${outFile}`, `/DICON=${icon}`, script],
+    { stdio: 'inherit', cwd: desktop },
+  );
+  if (res.status !== 0) throw new Error(`makensis failed: ${res.status}`);
+  if (!existsSync(outFile)) throw new Error(`makensis 说成功了但没产物：${outFile}`);
+  const sizeMb = (statSync(outFile).size / 1024 / 1024).toFixed(1);
+  console.log(`[installer] ok → ${outFile}（${sizeMb}MB，${((Date.now() - started) / 1000).toFixed(0)}s）`);
+  console.log('[installer] 安装包可在未签名状态下安装；Windows SmartScreen 可能显示未知发布者提示。');
+} finally {
+  rmSync(cleanPayload, { recursive: true, force: true });
+}

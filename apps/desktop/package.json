@@ -2,7 +2,7 @@
   "name": "@horun/desktop",
   "productName": "HorunDrama",
   "private": true,
-  "version": "2.0.8",
+  "version": "2.0.9",
   "description": "HorunDrama · Windows 桌面端",
   "type": "module",
   "main": "main.cjs",
@@ -70,10 +70,6 @@
       {
         "from": "../web-next/dist",
         "to": "web-next/dist"
-      },
-      {
-        "from": "resources/使用说明.txt",
-        "to": "使用说明.txt"
       }
     ],
     "win": {

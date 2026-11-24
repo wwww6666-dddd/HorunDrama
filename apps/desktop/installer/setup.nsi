@@ -55,7 +55,14 @@ InstallDirRegKey HKCU "${APP_KEY}" "InstallLocation"
   Pop $0
   nsExec::Exec 'taskkill /f /im "${APP_NAME}Core.exe"'
   Pop $0
-  Sleep 400
+  ; taskkill 返回后进程退出/释放 exe 句柄有时还需要一小段时间。
+  ; 先轮询最多 10 秒；仍占用文件就停止安装，避免 NSIS 给出 Retry/Ignore 并留下半安装状态。
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$$deadline=(Get-Date).AddSeconds(10); while ((Get-Process -Name HorunDrama,HorunDramaCore -ErrorAction SilentlyContinue) -and (Get-Date) -lt $$deadline) { Start-Sleep -Milliseconds 250 }; if (Get-Process -Name HorunDrama,HorunDramaCore -ErrorAction SilentlyContinue) { exit 1 }"'
+  Pop $0
+  ${If} $0 != 0
+    MessageBox MB_ICONSTOP|MB_OK "无法关闭 HorunDrama。请先退出软件，再重新运行安装程序。"
+    Abort
+  ${EndIf}
 !macroend
 
 Function .onInit
