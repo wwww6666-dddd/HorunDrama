@@ -1093,8 +1093,10 @@ ipcMain.handle('yimu:update-install', async (event, payload) => {
   });
   try {
     fs.writeFileSync(helper, script, 'utf8');
+    // 不要依赖 PATH：从某些启动环境（含测试壳）继承的 PATH 里没有 System32。
+    const cmdExe = process.env.ComSpec || path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
     require('node:child_process')
-      .spawn('cmd.exe', ['/d', '/c', `"${helper}"`], { detached: true, stdio: 'ignore', windowsHide: true })
+      .spawn(cmdExe, ['/d', '/c', `"${helper}"`], { detached: true, stdio: 'ignore', windowsHide: true })
       .unref();
     setTimeout(() => app.quit(), 500);
     return { ok: true, message: '正在退出并应用更新' };
