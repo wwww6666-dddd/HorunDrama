@@ -2,7 +2,7 @@
   "name": "@horun/desktop",
   "productName": "HorunDrama",
   "private": true,
-  "version": "2.0.9",
+  "version": "2.0.13",
   "description": "HorunDrama · Windows 桌面端",
   "type": "module",
   "main": "main.cjs",
@@ -32,6 +32,11 @@
     "files": [
       "main.cjs",
       "preload.cjs",
+      "data-root.cjs",
+      "core-restart.cjs",
+      "session-key.cjs",
+      "security.cjs",
+      "update-script.cjs",
       "package.json"
     ],
     "extraResources": [
@@ -91,7 +96,6 @@
       "createDesktopShortcut": false,
       "createStartMenuShortcut": false,
       "shortcutName": "HorunDrama",
-      "include": "installer.nsh",
       "runAfterFinish": false
     }
   }

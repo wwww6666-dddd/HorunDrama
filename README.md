@@ -14,7 +14,8 @@ Windows 短剧播放器。**下载就能用，不需要另外装任何东西**�
 3. 就这些，直接开始看
 
 > 系统要求：Windows 10 / 11（64 位）。
-> 安装包没有数字签名，首次运行 SmartScreen 会提示「未知发布者」→ 点「更多信息」→「仍要运行」即可。
+> 安装包使用自签名证书（CN=Horun）签名，未导入证书的机器仍会提示「未知发布者」→ 点「更多信息」→「仍要运行」；
+> 想消除提示可导入 Releases 附带的 `horun-codesign.cer`（Root + TrustedPublisher）。
 > 个别杀软会误报，加白名单就行。
 
 ## 功能
@@ -29,7 +30,8 @@ Windows 短剧播放器。**下载就能用，不需要另外装任何东西**�
   自动连播、跳过片头/片尾
 - **推荐页沉浸布局（2.0.0）**：视频按真实比例居中，左侧片单随切换平滑滚动，控制条贴着画面
 - **自动更新（2.0.1）**：启动后自动检查新版本，后台下载，点“立即重启更新”自动覆盖并重启；
-  更新完全自愿，打赏也完全自愿
+  更新完全自愿，打赏也完全自愿。下载走多连接 Range 分片（2.0.13 起会写
+  `data/updates/download.log`；多连接不可用时会退回单连接并在卡片提示）
 - **更顺手的手感（2.0.1）**：卡片大封面 3D 倾斜 / 跟随光斑、顶部华为式透明玻璃光感
 
 ## 数据放在哪
@@ -47,11 +49,13 @@ Windows 短剧播放器。**下载就能用，不需要另外装任何东西**�
 - 更新说明 / 下载：GitHub Releases（更新卡片和关于页都有入口）
 - 提问题 / 提需求：顶栏「✎」直接打开 Issues，或
   [新建 issue](https://github.com/wwww6666-dddd/HorunDrama/issues/new)
-- 想从源码自己编译：见 [docs/开发与打包.md](docs/开发与打包.md)
+- 想从源码自己编译：`pnpm install` → `pnpm test` → `pnpm -r --parallel run typecheck` →
+  `pnpm --filter @horun/web-next run build`；出包脚本在 `apps/desktop/scripts/`
+  （`pack` / `build-installer.mjs` / `build-portable.ps1`，细节见脚本头部注释）
 
 ## 许可证
 
-本项目以 **GPL-3.0** 发布，见 [LICENSE](LICENSE)。第三方组件声明见 [NOTICE.md](NOTICE.md)。
+本项目以 **GPL-3.0** 发布（公开仓库根目录有 `LICENSE`）；第三方组件声明见 [NOTICE.md](NOTICE.md)。
 
 ## 免责声明
 

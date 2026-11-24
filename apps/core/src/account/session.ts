@@ -11,13 +11,21 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { DATA_ROOT } from '../config.ts';
 import { createLogger } from '../util/log.ts';
+
+const require = createRequire(import.meta.url);
+const { parseSessionFile, serializeSessionFile } = require('./session-vault.cjs') as {
+  parseSessionFile: (contents: string, key: string) => { value: Partial<Session>; encrypted: boolean };
+  serializeSessionFile: (value: Session, key: string) => string;
+};
 
 const log = createLogger('account');
 
 const SESSION_FILE = path.join(DATA_ROOT, 'session.json');
 const DEVICE_FILE = path.join(DATA_ROOT, 'session-device.json');
+const SESSION_KEY = process.env.HORUN_SESSION_KEY ?? '';
 
 export interface SessionProfile {
   userId: string;
@@ -68,7 +76,7 @@ export function readSession(): Session {
   }
   if (sessionCache !== null && mtime === sessionMtime) return sessionCache;
   try {
-    const raw = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8')) as Partial<Session>;
+    const { value: raw, encrypted } = parseSessionFile(fs.readFileSync(SESSION_FILE, 'utf8'), SESSION_KEY);
     sessionCache = {
       cookie: typeof raw.cookie === 'string' ? raw.cookie : '',
       token: typeof raw.token === 'string' ? raw.token : '',
@@ -79,7 +87,12 @@ export function readSession(): Session {
           ? raw.source
           : 'manual',
     };
-    sessionMtime = mtime;
+    if (!encrypted && SESSION_KEY !== '') {
+      fs.writeFileSync(SESSION_FILE, serializeSessionFile(sessionCache, SESSION_KEY), { mode: 0o600 });
+      sessionMtime = fs.statSync(SESSION_FILE).mtimeMs;
+    } else {
+      sessionMtime = mtime;
+    }
   } catch (err) {
     log.warn(`session.json 解析失败: ${(err as Error).message}`);
     sessionCache = null;
@@ -104,7 +117,7 @@ export function writeSession(next: {
     source: next.source,
   };
   fs.mkdirSync(DATA_ROOT, { recursive: true });
-  fs.writeFileSync(SESSION_FILE, JSON.stringify(value, null, 2), { mode: 0o600 });
+  fs.writeFileSync(SESSION_FILE, serializeSessionFile(value, SESSION_KEY), { mode: 0o600 });
   sessionCache = value;
   sessionMtime = fs.statSync(SESSION_FILE).mtimeMs;
   return value;

@@ -50,9 +50,15 @@ if ($null -ne $cert) {
 }
 
 $release = Resolve-Path (Join-Path $PSScriptRoot '..\release')
+# electron-builder writes to release\build\win-unpacked (see build.directories.output);
+# release\win-unpacked is only the pre-2.0.9 layout kept as a fallback.
+$appDir = Join-Path $release 'build\win-unpacked'
+if (-not (Test-Path -LiteralPath $appDir)) { $appDir = Join-Path $release 'win-unpacked' }
 $targets = @(
-  (Join-Path $release "win-unpacked\HorunDrama.exe"),
-  (Join-Path $release "win-unpacked\HorunDramaCore.exe"),
+  (Join-Path $appDir "HorunDrama.exe"),
+  (Join-Path $appDir "HorunDramaCore.exe"),
+  (Join-Path $appDir "resources\ffmpeg\ffmpeg.exe"),
+  (Join-Path $appDir "resources\hgsigner\hgsigner.exe"),
   (Join-Path $release "HorunDrama Setup $Version.exe")
 ) | Where-Object { Test-Path -LiteralPath $_ }
 

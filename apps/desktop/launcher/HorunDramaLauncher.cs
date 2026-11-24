@@ -1,9 +1,7 @@
 // HorunDrama · 启动器
 //
-// 为什么需要它：这台机器上 Electron 不带 --no-sandbox 会在原生初始化阶段直接崩
-// （退出码 0x80000003，且崩在主进程 JS 之前，程序内无法自救）。
-// 而「双击 exe」这个动作没法带参数，所以把真正的 Electron 程序改名为 HorunDramaCore.exe，
-// 用一个极小的 launcher 顶替 YiMu.exe：它只做一件事——带上 --no-sandbox 再拉起核心程序。
+// 双击 exe 时先用 Chromium 沙箱启动 Electron；若它在 6 秒内异常退出，
+// 再启用 --no-sandbox --disable-gpu 兼容模式，兼顾安全默认值和受限环境兼容性。
 //
 // 编译：csc /target:winexe /out:YiMu.exe YiMuLauncher.cs
 // （.NET Framework 4.x 自带编译器，目标机器无需安装运行时）
@@ -35,7 +33,23 @@ internal static class Program
             }
         }
 
-        var sb = new StringBuilder("--no-sandbox ");
+        using (Process first = StartCore(core, args, false))
+        {
+            if (first == null) return 4;
+            if (!first.WaitForExit(6000)) return 0;
+            if (first.ExitCode == 0) return 0;
+        }
+
+        using (Process fallback = StartCore(core, args, true))
+        {
+            return fallback == null ? 4 : 0;
+        }
+    }
+
+    private static Process StartCore(string core, string[] args, bool compatibilityMode)
+    {
+        var sb = new StringBuilder();
+        if (compatibilityMode) sb.Append("--no-sandbox --disable-gpu ");
         foreach (string a in args)
         {
             sb.Append('"').Append(a.Replace("\"", "\\\"")).Append("\" ");
@@ -44,10 +58,9 @@ internal static class Program
         var psi = new ProcessStartInfo(core, sb.ToString())
         {
             UseShellExecute = false,
-            WorkingDirectory = Path.GetDirectoryName(core) ?? dir,
+            WorkingDirectory = Path.GetDirectoryName(core) ?? ".",
             CreateNoWindow = true,
         };
-        Process.Start(psi);
-        return 0;
+        return Process.Start(psi);
     }
 }

@@ -21,11 +21,18 @@ export interface YimuBridge {
     name: string;
     size?: number;
     digest?: string;
-  }) => Promise<{ ok: boolean; path?: string; size?: number; sha256?: string; message?: string }>;
+  }) => Promise<{ ok: boolean; path?: string; size?: number; sha256?: string; mode?: 'parallel' | 'single'; connections?: number; message?: string }>;
   /** 自动更新：退出并解压覆盖，然后重启 */
   updateInstall?: (payload: { path: string }) => Promise<{ ok: boolean; message?: string }>;
   /** 下载进度：0~1 */
-  onUpdateProgress?: (cb: (payload: { received: number; total: number; percent: number }) => void) => () => void;
+  onUpdateProgress?: (cb: (payload: {
+    received: number;
+    total: number;
+    percent: number;
+    /** 主进程实际使用的下载方式：多连接 Range 分片 / 单连接兜底 */
+    mode?: 'parallel' | 'single';
+    connections?: number;
+  }) => void) => () => void;
   /** 写剪贴板（主进程 clipboard） */
   copyText?: (text: string) => Promise<boolean>;
   toggleMaximize?: () => Promise<void>;

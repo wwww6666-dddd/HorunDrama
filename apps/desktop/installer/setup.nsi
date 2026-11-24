@@ -8,7 +8,7 @@
 ;      $INSTDIR 为空时恒真 → 会把整机进程当成 HorunDrama 去强杀，杀不完就弹
 ;      「HorunDrama 无法关闭」卡死安装。
 ; 这个脚本只做最基本的事，全部按 **当前用户** 安装（不需要管理员、不弹 UAC）：
-;   选择目录 → 结束旧进程 → 复制文件 → 桌面/开始菜单快捷方式 → 卸载登记。
+;   选择目录 → 检查目标程序文件是否被占用 → 复制文件 → 创建快捷方式和卸载登记。
 ;
 ; 编译（scripts/build-installer.mjs 调用）：
 ;   makensis /INPUTCHARSET UTF8 -DPAYLOAD=<win-unpacked> -DVERSION=x.y.z -DOUTFILE=<exe> -DICON=<ico> setup.nsi
@@ -42,36 +42,11 @@ InstallDirRegKey HKCU "${APP_KEY}" "InstallLocation"
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_NAME}.exe"
-!define MUI_FINISHPAGE_RUN_PARAMETERS "--no-sandbox"
 !define MUI_FINISHPAGE_RUN_TEXT "启动 ${APP_NAME}"
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "SimpChinese"
-
-; 只按镜像名结束进程：不做路径前缀匹配，也不会阻塞（结束不掉也继续装）
-!macro KillRunning
-  nsExec::Exec 'taskkill /f /im "${APP_NAME}.exe"'
-  Pop $0
-  nsExec::Exec 'taskkill /f /im "${APP_NAME}Core.exe"'
-  Pop $0
-  ; taskkill 返回后进程退出/释放 exe 句柄有时还需要一小段时间。
-  ; 先轮询最多 10 秒；仍占用文件就停止安装，避免 NSIS 给出 Retry/Ignore 并留下半安装状态。
-  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$$deadline=(Get-Date).AddSeconds(10); while ((Get-Process -Name HorunDrama,HorunDramaCore -ErrorAction SilentlyContinue) -and (Get-Date) -lt $$deadline) { Start-Sleep -Milliseconds 250 }; if (Get-Process -Name HorunDrama,HorunDramaCore -ErrorAction SilentlyContinue) { exit 1 }"'
-  Pop $0
-  ${If} $0 != 0
-    MessageBox MB_ICONSTOP|MB_OK "无法关闭 HorunDrama。请先退出软件，再重新运行安装程序。"
-    Abort
-  ${EndIf}
-!macroend
-
-Function .onInit
-  ; 2.0.6 及更早（electron-builder oneClick）装到了 @horundesktop，顺手清掉
-  ${If} ${FileExists} "$LOCALAPPDATA\Programs\@horundesktop\${APP_NAME}.exe"
-    RMDir /r "$LOCALAPPDATA\Programs\@horundesktop"
-  ${EndIf}
-  !insertmacro KillRunning
-FunctionEnd
 
 Section "安装" INSTALL_SECTION
   ; 先确认用户选择的目录确实可写，避免 File /r 失败后出现 Retry/Ignore。
@@ -117,9 +92,9 @@ filesReady:
   Pop $0
 
   ; 桌面 + 开始菜单快捷方式（按当前用户）
-  CreateShortCut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\${APP_NAME}.exe" "--no-sandbox" "$INSTDIR\${APP_NAME}.exe" 0
+  CreateShortCut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\${APP_NAME}.exe" "" "$INSTDIR\${APP_NAME}.exe" 0
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
-  CreateShortCut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\${APP_NAME}.exe" "--no-sandbox" "$INSTDIR\${APP_NAME}.exe" 0
+  CreateShortCut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\${APP_NAME}.exe" "" "$INSTDIR\${APP_NAME}.exe" 0
 
   WriteUninstaller "$INSTDIR\Uninstall ${APP_NAME}.exe"
 
@@ -144,17 +119,16 @@ Function un.onInit
   ${If} $INSTDIR == ""
     StrCpy $INSTDIR $EXEDIR
   ${EndIf}
-  !insertmacro KillRunning
 FunctionEnd
 
 Section "Uninstall"
-  ; 先删自己造的东西，再删程序文件
+  ; 只删除安装载荷清单中的文件，保留用户放在安装目录中的其他内容。
   Delete "$DESKTOP\${APP_NAME}.lnk"
   Delete "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk"
   RMDir "$SMPROGRAMS\${APP_NAME}"
-
+  !include "${PAYLOAD}\.horundrama-uninstall.nsh"
   Delete "$INSTDIR\Uninstall ${APP_NAME}.exe"
-  RMDir /r "$INSTDIR"
+  RMDir "$INSTDIR"
 
   DeleteRegKey HKCU "${UNINST_KEY}"
   DeleteRegKey HKCU "${APP_KEY}"

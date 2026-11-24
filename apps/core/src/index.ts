@@ -27,7 +27,19 @@ const MIME: Record<string, string> = {
 };
 
 function serveStatic(res: http.ServerResponse, pathname: string): void {
-  const rel = decodeURIComponent(pathname).replace(/^\/+/, '');
+  let rel: string;
+  try {
+    rel = decodeURIComponent(pathname).replace(/^\/+/, '');
+  } catch {
+    const body = '{"ok":false,"code":"bad_url","message":"请求地址编码无效"}';
+    res.writeHead(400, {
+      'content-type': 'application/json; charset=utf-8',
+      'content-length': Buffer.byteLength(body),
+      'cache-control': 'no-store',
+    });
+    res.end(body);
+    return;
+  }
   const resolved = path.resolve(WEB_DIST, rel);
   const inside = resolved === WEB_DIST || resolved.startsWith(WEB_DIST + path.sep);
   const wantFile = rel !== '' && path.extname(resolved) !== '';
@@ -74,7 +86,14 @@ function authorized(req: http.IncomingMessage): boolean {
 
 const server = http.createServer((req, res) => {
   const method = req.method ?? 'GET';
-  const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
+  let url: URL;
+  try {
+    url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
+  } catch {
+    res.writeHead(400, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    res.end('{"ok":false,"code":"bad_url","message":"请求地址无效"}');
+    return;
+  }
 
   if (url.pathname.startsWith('/api/')) {
     if (!allowedHosts.has((req.headers.host ?? '').toLowerCase())) {
@@ -93,7 +112,14 @@ const server = http.createServer((req, res) => {
       res.end('{"ok":false,"code":"unauthorized","message":"缺少有效的本机应用令牌"}');
       return;
     }
-    const hit = router.match(method, url.pathname);
+    let hit;
+    try {
+      hit = router.match(method, url.pathname);
+    } catch {
+      res.writeHead(400, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end('{"ok":false,"code":"bad_url","message":"请求地址编码无效"}');
+      return;
+    }
     if (hit === null) {
       const body = JSON.stringify({ ok: false, code: 'no_route', message: `没有这个接口: ${url.pathname}` });
       res.writeHead(404, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(body) });
@@ -113,6 +139,14 @@ const server = http.createServer((req, res) => {
   }
 
   serveStatic(res, url.pathname);
+});
+
+server.on('clientError', (_err, socket) => {
+  if (!socket.writable) return;
+  const body = '{"ok":false,"code":"bad_request","message":"HTTP 请求格式无效"}';
+  socket.end(
+    `HTTP/1.1 400 Bad Request\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`,
+  );
 });
 
 server.on('error', (err) => {

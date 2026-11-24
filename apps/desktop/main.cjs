@@ -14,10 +14,15 @@
  *   --shot=<png>    截图后退出（自测用，不需要人盯着屏幕）
  *   --dev           加载 Vite 开发服务器（热更新）
  */
-const { app, BrowserWindow, shell, Menu, ipcMain, session, dialog, screen, nativeTheme, net } = require('electron');
+const { app, BrowserWindow, shell, Menu, ipcMain, session, safeStorage, dialog, screen, nativeTheme, net } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const crypto = require('node:crypto');
+const { getDataRootCandidates, recoverInstalledDataRoot, hasKnownDatabase } = require('./data-root.cjs');
+const { createCoreRestartState, getCoreRestartDelay } = require('./core-restart.cjs');
+const { getOrCreateSessionKey } = require('./session-key.cjs');
+const { isTrustedRendererUrl, isAllowedUpdateAsset, isAllowedUpdateRedirect } = require('./security.cjs');
+const { createUpdateScript } = require('./update-script.cjs');
 
 /**
  * GUI 启动（双击 exe / 快捷方式）时没有控制台，往 stdout/stderr 写会 EPIPE。
@@ -49,16 +54,6 @@ for (const level of ['log', 'info', 'warn', 'error', 'debug']) {
   };
 }
 
-/**
- * 这台机器上不带 --no-sandbox 会在 Chromium 初始化阶段就崩（0x80000003），
- * 而且崩在主进程 JS 之前——所以真正兜住这件事的是 launcher/YiMuLauncher.cs，
- * 正常安装后进来的调用一定已经带了这个参数。这里只是开发期（electron .）的补充。
- */
-if (!process.argv.includes('--no-sandbox')) {
-  app.commandLine.appendSwitch('no-sandbox');
-  app.commandLine.appendSwitch('disable-gpu');
-}
-
 const IS_DEV = process.argv.includes('--dev') || process.env.HORUN_DEV === '1';
 const SHOT = process.argv.find((a) => a.startsWith('--shot='))?.slice('--shot='.length) ?? '';
 
@@ -69,15 +64,28 @@ const SHOT = process.argv.find((a) => a.startsWith('--shot='))?.slice('--shot='.
  * 而 Electron 拿不到 profile 目录就会崩在启动阶段。所以逐个试，谁先写通就用谁。
  */
 function chooseDataRoot() {
-  const candidates = [];
-  if (process.env.HORUN_DATA_DIR) candidates.push(path.resolve(process.env.HORUN_DATA_DIR));
+  const candidates = getDataRootCandidates({
+    isPackaged: app.isPackaged,
+    envDataDir: process.env.HORUN_DATA_DIR,
+    appDataDir: path.join(app.getPath('appData'), 'HorunDrama'),
+    localAppDataDir: process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'HorunDrama') : '',
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+  });
   // 便携版（压缩包解压出来的那一份）：exe 同目录放一个 portable.txt，
   // 数据就写到 exe 旁边的 data/。便携版**直接返回**，不参与后面的候选比较 ——
   // 否则机器上已有 %APPDATA%\HorunDrama 时，"复用已有数据目录"会把它抢走，
   // 表现就是"解压到 U 盘却写到了 C 盘"。
   try {
     const exeDir = path.dirname(app.getPath('exe'));
-    if (fs.existsSync(path.join(exeDir, 'portable.txt'))) {
+    const appDataDir = path.join(app.getPath('appData'), 'HorunDrama');
+    // 2.0.8 的更新器会把 portable.txt 带进安装目录。若该目录有卸载器
+    // 且旧安装数据仍在 AppData，恢复安装版数据根，避免把旧用户误切到空 data/。
+    const recoveredDataRoot = recoverInstalledDataRoot({ exeDir, appDataDir });
+    if (recoveredDataRoot !== null) {
+      console.warn('[desktop] 检测到安装版升级遗留的 portable.txt，恢复数据目录:', appDataDir);
+      candidates.unshift(recoveredDataRoot);
+    } else if (fs.existsSync(path.join(exeDir, 'portable.txt'))) {
       const portableDir = path.join(exeDir, 'data');
       try {
         fs.mkdirSync(portableDir, { recursive: true });
@@ -93,12 +101,6 @@ function chooseDataRoot() {
   } catch {
     /* getPath 在极早期可能不可用，忽略 */
   }
-  candidates.push(path.join(app.getPath('appData'), 'HorunDrama'));
-  if (process.env.LOCALAPPDATA) candidates.push(path.join(process.env.LOCALAPPDATA, 'HorunDrama'));
-  // 开发兜底：仓库内 data/（受限于某些沙箱环境，Electron 写不了 %APPDATA%）。
-  // 绝不把 node_modules 或安装目录当数据目录——那是之前的坑。
-  candidates.push(path.join(app.getAppPath(), '..', '..', 'data'));
-  candidates.push(path.join(process.resourcesPath, '..', 'data'));
 
   const writable = (dir) => {
     try {
@@ -116,7 +118,7 @@ function chooseDataRoot() {
   // 优先复用「已经存在数据库」的目录：否则每次启动可能在两个目录间跳，
   // 表现就是进度/登录态时有时无（真实踩过的坑）。
   for (const dir of candidates) {
-    if (fs.existsSync(path.join(dir, 'yimu.db')) && writable(dir)) {
+    if (hasKnownDatabase(dir) && writable(dir)) {
       console.log('[desktop] 复用已有数据目录:', dir);
       return dir;
     }
@@ -248,6 +250,16 @@ let mainWindow = null;
 let coreProc = null;
 let serverOrigin = '';
 let apiToken = '';
+let sessionKey = '';
+const coreRestartState = createCoreRestartState();
+const registerIpcHandler = ipcMain.handle.bind(ipcMain);
+ipcMain.handle = (channel, listener) =>
+  registerIpcHandler(channel, (event, ...args) => {
+    if (!isTrustedRendererUrl(event.senderFrame?.url, serverOrigin, IS_DEV)) {
+      throw new Error(`拒绝非本地页面调用 IPC: ${channel}`);
+    }
+    return listener(event, ...args);
+  });
 
 /**
  * 启动新核心（apps/core）。
@@ -259,32 +271,44 @@ async function boot() {
   const entry = coreEntry();
   const port = Number(process.env.HORUN_PORT ?? 5880);
   const origin = `http://127.0.0.1:${port}`;
-  apiToken = app.isPackaged ? crypto.randomBytes(32).toString('hex') : '';
+  if (apiToken === '' && app.isPackaged) apiToken = crypto.randomBytes(32).toString('hex');
+  if (sessionKey === '' && app.isPackaged) {
+    const sessionKeyPath = path.join(dataRoot ?? path.join(app.getPath('appData'), 'HorunDrama'), 'session-key.dpapi');
+    sessionKey = getOrCreateSessionKey({ safeStorage, filePath: sessionKeyPath });
+    if (sessionKey === '') console.warn('[desktop] Windows 会话加密不可用，账号会话将使用本地文件保护');
+  }
 
   // 打包后 ffmpeg 在 resources/ffmpeg；显式传给核心，免得它去猜路径
   const packagedFfmpeg = path.join(process.resourcesPath ?? '', 'ffmpeg', 'ffmpeg.exe');
   const ffmpegEnv = fs.existsSync(packagedFfmpeg) ? { HORUN_FFMPEG: packagedFfmpeg } : {};
 
-  coreProc = require('node:child_process').spawn(process.execPath, [entry], {
+  const child = require('node:child_process').spawn(process.execPath, [entry], {
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
       HORUN_PORT: String(port),
       ...(IS_DEV ? { HORUN_DEV: '1' } : {}),
       ...(apiToken === '' ? {} : { HORUN_API_TOKEN: apiToken }),
+      ...(sessionKey === '' ? {} : { HORUN_SESSION_KEY: sessionKey }),
       ...ffmpegEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
-  coreProc.stdout.on('data', (d) => safeLog(`[core] ${String(d).trimEnd()}`));
-  coreProc.stderr.on('data', (d) => safeLog(`[core] ${String(d).trimEnd()}`, true));
-  coreProc.on('exit', (code) => {
+  coreProc = child;
+  child.stdout.on('data', (d) => safeLog(`[core] ${String(d).trimEnd()}`));
+  child.stderr.on('data', (d) => safeLog(`[core] ${String(d).trimEnd()}`, true));
+  child.on('exit', (code) => {
     if (code !== 0) console.error(`[desktop] 核心退出，code=${code}`);
-    coreProc = null;
+    if (coreProc === child) coreProc = null;
+    if (coreProc !== null || coreRestartState.isShuttingDown || mainWindow === null || coreRestartState.inProgress) return;
+    scheduleCoreRestart();
   });
 
   for (let i = 0; i < 120; i += 1) {
+    if (coreProc !== child || child.exitCode !== null) {
+      throw new Error(`核心进程提前退出（code=${child.exitCode ?? 'unknown'}）`);
+    }
     try {
       const res = await fetch(`${origin}/api/health`, {
         headers: apiToken === '' ? undefined : { 'x-horun-token': apiToken },
@@ -300,7 +324,51 @@ async function boot() {
     }
     await new Promise((r) => setTimeout(r, 250));
   }
+  child.kill();
   throw new Error('核心启动超时（检查 apps/core 是否能直接 node 跑起来）');
+}
+
+function setCoreTokenCookie(origin) {
+  if (apiToken === '') return Promise.resolve();
+  return session.defaultSession.cookies.set({
+    url: origin,
+    name: 'horun_token',
+    value: apiToken,
+    path: '/',
+    httpOnly: true,
+    sameSite: 'strict',
+  });
+}
+
+function scheduleCoreRestart() {
+  if (coreRestartState.timer !== null || coreRestartState.isShuttingDown || mainWindow === null) return;
+  const delay = getCoreRestartDelay(coreRestartState.attempts, coreRestartState.isShuttingDown);
+  if (delay === null) {
+    console.error('[desktop] 核心多次重启失败，退出应用');
+    app.quit();
+    return;
+  }
+
+  coreRestartState.attempts += 1;
+  console.warn(`[desktop] ${delay}ms 后重启核心（${coreRestartState.attempts}/3）`);
+  coreRestartState.timer = setTimeout(async () => {
+    coreRestartState.timer = null;
+    if (coreRestartState.isShuttingDown || mainWindow === null) return;
+    coreRestartState.inProgress = true;
+    let recovered = false;
+    try {
+      const origin = await boot();
+      await setCoreTokenCookie(origin);
+      await mainWindow?.loadURL(origin);
+      recovered = true;
+    } catch (err) {
+      console.error('[desktop] 核心重启失败:', err);
+      if (coreProc !== null) coreProc.kill();
+    } finally {
+      coreRestartState.inProgress = false;
+    }
+    if (!recovered && !coreRestartState.isShuttingDown) scheduleCoreRestart();
+  }, delay);
 }
 
 // ---------------------------------------------------------------- 登录
@@ -343,8 +411,37 @@ async function openLoginWindow(hintSeriesId) {
   void win.loadURL(target);
 
   win.once('ready-to-show', () => win.show());
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'https:') void shell.openExternal(parsed.toString());
+    } catch {
+      /* 拒绝无效弹窗地址 */
+    }
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    let allowed = false;
+    try {
+      const parsed = new URL(url);
+      allowed = parsed.protocol === 'https:' &&
+        (parsed.hostname === 'hongguoduanju.com' || parsed.hostname.endsWith('.hongguoduanju.com'));
+    } catch {
+      /* 拒绝无效地址 */
+    }
+    if (allowed) return;
+    event.preventDefault();
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') void shell.openExternal(parsed.toString());
+    } catch {
+      /* 拒绝无效外链 */
+    }
+  });
 
   const ses = win.webContents.session;
+  ses.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  ses.setPermissionCheckHandler(() => false);
   let closed = false;
   win.on('closed', () => {
     closed = true;
@@ -379,10 +476,15 @@ async function openLoginWindow(hintSeriesId) {
       try {
         const res = await fetch(`${serverOrigin}/api/account/session`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiToken === '' ? {} : { 'x-horun-token': apiToken }),
+          },
           body: JSON.stringify({ cookie: header }),
         });
         if (!res.ok) throw new Error(`保存会话失败 HTTP ${res.status}`);
+        const body = await res.json();
+        if (body?.ok !== true) throw new Error(body?.message || '保存会话失败');
         if (!closed) win.close();
         mainWindow?.webContents.send('yimu:login-changed', { loggedIn: true });
         return { ok: true, cookieCount: cookies.length };
@@ -645,25 +747,35 @@ function updateDir() {
   return dir;
 }
 
+/**
+ * 自动更新下载日志（data/updates/download.log）。
+ *
+ * 为什么不只 console.warn：打包版没有控制台，用户只会感觉“更新很慢”，
+ * 无法判断是不是多连接回退成了单连接（详见开发文档 §11.6.1）。
+ * 超过 512KB 直接重开，避免长期运行无限增长。
+ */
+function updateLog(message) {
+  try {
+    const file = path.join(updateDir(), 'download.log');
+    try {
+      if (fs.existsSync(file) && fs.statSync(file).size > 512 * 1024) fs.rmSync(file, { force: true });
+    } catch {
+      /* ignore */
+    }
+    fs.appendFileSync(file, `${new Date().toISOString()} ${message}\n`, 'utf8');
+  } catch {
+    /* 日志失败不影响下载 */
+  }
+}
+
 /** 只接受 GitHub 的 https 资源，避免把下载器变成任意文件下载器。 */
 function isAllowedUpdateUrl(raw) {
   try {
     const u = new URL(String(raw));
-    if (u.protocol !== 'https:') return false;
-    return (
-      u.hostname === 'github.com' ||
-      u.hostname.endsWith('.github.com') ||
-      u.hostname === 'githubusercontent.com' ||
-      u.hostname.endsWith('.githubusercontent.com')
-    );
+    return u.protocol === 'https:' && u.hostname === 'github.com';
   } catch {
     return false;
   }
-}
-
-function safeUpdateName(name) {
-  const base = path.basename(String(name ?? '')).replace(/[^\w.\- ]+/g, '_').slice(-140);
-  return base === '' ? `HorunDrama-update-${Date.now()}.bin` : base;
 }
 
 function unlinkQuiet(file) {
@@ -672,6 +784,12 @@ function unlinkQuiet(file) {
   } catch {
     /* ignore */
   }
+}
+
+async function sha256File(file) {
+  const hash = crypto.createHash('sha256');
+  for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
+  return hash.digest('hex');
 }
 
 function updaterUserAgent() {
@@ -688,38 +806,51 @@ function updaterUserAgent() {
 async function fetchUpdate(url, init) {
   if (net !== undefined && typeof net.fetch === 'function') {
     try {
-      return await net.fetch(url, init);
+      const response = await net.fetch(url, init);
+      if (!isAllowedUpdateRedirect(response.url || url)) throw new Error('更新下载重定向到了非可信地址');
+      return response;
     } catch (err) {
       console.warn('[update] net.fetch 失败，尝试 Node fetch:', err.message);
     }
   }
-  return fetch(url, init);
+  const response = await fetch(url, init);
+  if (!isAllowedUpdateRedirect(response.url || url)) throw new Error('更新下载重定向到了非可信地址');
+  return response;
 }
 
-function progressSender(event, total) {
+function progressSender(event, total, mode) {
   let received = 0;
   let lastSent = 0;
+  const send = (bytes) => {
+    event.sender.send('yimu:update-progress', {
+      received: bytes,
+      total,
+      percent: total > 0 ? Math.min(1, bytes / total) : 0,
+      mode,
+    });
+  };
   return {
     add(bytes) {
       received += bytes;
       const now = Date.now();
       if (now - lastSent > 220) {
         lastSent = now;
-        event.sender.send('yimu:update-progress', {
-          received,
-          total,
-          percent: total > 0 ? Math.min(1, received / total) : 0,
-        });
+        send(received);
       }
     },
     get received() {
       return received;
     },
+    /** 下载方式确定时先通知一次渲染进程（并行不可用要立刻提示“已退回单连接”）。 */
+    notify() {
+      send(received);
+    },
   };
 }
 
-/** 单连接下载（保持原来的兜底路径）。 */
-async function downloadSingle(url, part, payload, event) {
+/** 单连接下载（兜底路径；fallbackReason 非空说明多连接不可用）。 */
+async function downloadSingle(url, part, payload, event, fallbackReason = '') {
+  const started = Date.now();
   const res = await fetchUpdate(url, {
     redirect: 'follow',
     headers: { 'user-agent': updaterUserAgent() },
@@ -729,7 +860,10 @@ async function downloadSingle(url, part, payload, event) {
   const total = Number(res.headers.get('content-length') ?? payload?.size ?? 0);
   const out = fs.createWriteStream(part);
   const hash = crypto.createHash('sha256');
-  const progress = progressSender(event, total);
+  const progress = progressSender(event, total, 'single');
+  progress.notify();
+  updateLog(`single start bytes=${total}${fallbackReason === '' ? '' : ` fallback=${fallbackReason}`}`);
+  if (fallbackReason !== '') console.warn('[update] 多连接不可用，已退回单连接:', fallbackReason);
   try {
     for await (const chunk of res.body) {
       const buf = Buffer.from(chunk);
@@ -742,10 +876,15 @@ async function downloadSingle(url, part, payload, event) {
       out.end(resolve);
       out.on('error', reject);
     });
-    return { received: progress.received, total, sha256: hash.digest('hex') };
+    const seconds = Math.max(0.001, (Date.now() - started) / 1000);
+    updateLog(
+      `single done bytes=${progress.received} seconds=${seconds.toFixed(1)} speed=${(progress.received / 1048576 / seconds).toFixed(2)}MB/s`,
+    );
+    return { received: progress.received, total, sha256: hash.digest('hex'), mode: 'single' };
   } catch (err) {
     out.destroy();
     unlinkQuiet(part);
+    updateLog(`single failed: ${err.message}`);
     throw err;
   }
 }
@@ -756,9 +895,12 @@ async function downloadSingle(url, part, payload, event) {
  * GitHub Release 的签名资源支持 Range，通常比单连接快 2~5 倍。
  */
 async function downloadParallel(url, part, total, payload, event) {
-  const connections = total > 80 * 1024 * 1024 ? 6 : 4;
+  const started = Date.now();
+  const connections = total > 80 * 1024 * 1024 ? 8 : 4;
   const chunkSize = Math.ceil(total / connections);
-  const progress = progressSender(event, total);
+  const progress = progressSender(event, total, 'parallel');
+  progress.notify();
+  updateLog(`parallel start connections=${connections} bytes=${total}`);
   const chunkFiles = [];
   try {
     await Promise.all(
@@ -816,8 +958,13 @@ async function downloadParallel(url, part, total, payload, event) {
       out.end(resolve);
       out.on('error', reject);
     });
-    return { received: progress.received, total, sha256: hash.digest('hex') };
+    const seconds = Math.max(0.001, (Date.now() - started) / 1000);
+    updateLog(
+      `parallel done connections=${connections} bytes=${progress.received} seconds=${seconds.toFixed(1)} speed=${(progress.received / 1048576 / seconds).toFixed(2)}MB/s`,
+    );
+    return { received: progress.received, total, sha256: hash.digest('hex'), mode: 'parallel', connections };
   } catch (err) {
+    updateLog(`parallel failed connections=${connections}: ${err.message}`);
     for (const chunkFile of chunkFiles) unlinkQuiet(chunkFile);
     unlinkQuiet(part);
     throw err;
@@ -831,19 +978,35 @@ async function downloadParallel(url, part, total, payload, event) {
  * 返回 { ok, path, size, sha256 }；失败返回 { ok:false, message }。
  */
 ipcMain.handle('yimu:update-download', async (event, payload) => {
+  if (!isTrustedRendererUrl(event.senderFrame?.url, serverOrigin, IS_DEV)) {
+    return { ok: false, message: '拒绝非本地页面调用更新接口' };
+  }
   const url = String(payload?.url ?? '');
-  if (!isAllowedUpdateUrl(url)) return { ok: false, message: '更新地址不是 GitHub https 地址' };
-  const file = path.join(updateDir(), safeUpdateName(payload?.name));
+  const name = String(payload?.name ?? '');
+  if (!isAllowedUpdateAsset(url, name) || !isAllowedUpdateUrl(url)) {
+    return { ok: false, message: '更新包不是项目发布的便携压缩包' };
+  }
+  const expected = String(payload?.digest ?? '').replace(/^sha256:/i, '').toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(expected)) return { ok: false, message: '更新包缺少有效 SHA-256 摘要' };
+  const file = path.join(updateDir(), name);
+  const metadataFile = `${file}.json`;
   const part = `${file}.part`;
   try {
     const knownSize = Number(payload?.size ?? 0);
     if (fs.existsSync(file)) {
+      const metadata = fs.existsSync(metadataFile) ? JSON.parse(fs.readFileSync(metadataFile, 'utf8')) : null;
       const size = fs.statSync(file).size;
-      if (knownSize === 0 || Math.abs(size - knownSize) <= 1024) {
+      const digest = await sha256File(file);
+      if (
+        metadata?.name === name && metadata?.url === url && metadata?.sha256 === digest && digest === expected &&
+        (knownSize === 0 || Math.abs(size - knownSize) <= 1024)
+      ) {
         event.sender.send('yimu:update-progress', { received: size, total: size, percent: 1 });
-        return { ok: true, path: file, size, sha256: '' };
+        updateLog(`cache hit bytes=${size}`);
+        return { ok: true, path: file, size, sha256: digest };
       }
       unlinkQuiet(file);
+      unlinkQuiet(metadataFile);
     }
     unlinkQuiet(part);
 
@@ -852,17 +1015,18 @@ ipcMain.handle('yimu:update-download', async (event, payload) => {
       try {
         result = await downloadParallel(url, part, knownSize, payload, event);
       } catch (parallelErr) {
-        // 某些代理/CDN 不支持 Range 或返回 200：退回单连接，不要因此更新失败
+        // 某些代理/CDN 不支持 Range 或返回 200：退回单连接，不要因此更新失败。
+        // 必须同时落日志并通知渲染进程，否则用户只会感觉“更新很慢”（§11.6.1）。
+        updateLog(`fallback to single: ${parallelErr.message}`);
         console.warn('[update] 多连接下载失败，回退单连接:', parallelErr.message);
         unlinkQuiet(part);
-        result = await downloadSingle(url, part, payload, event);
+        result = await downloadSingle(url, part, payload, event, parallelErr.message);
       }
     } else {
       result = await downloadSingle(url, part, payload, event);
     }
 
-    const expected = String(payload?.digest ?? '').replace(/^sha256:/i, '').toLowerCase();
-    if (expected !== '' && expected !== result.sha256) {
+    if (expected !== result.sha256) {
       unlinkQuiet(part);
       return { ok: false, message: 'SHA-256 校验失败，已删除下载文件' };
     }
@@ -873,10 +1037,12 @@ ipcMain.handle('yimu:update-download', async (event, payload) => {
     }
     unlinkQuiet(file);
     fs.renameSync(part, file);
-    event.sender.send('yimu:update-progress', { received: result.received, total: result.received, percent: 1 });
-    return { ok: true, path: file, size: result.received, sha256: result.sha256 };
+    fs.writeFileSync(metadataFile, JSON.stringify({ name, url, sha256: result.sha256 }), 'utf8');
+    event.sender.send('yimu:update-progress', { received: result.received, total: result.received, percent: 1, mode: result.mode });
+    return { ok: true, path: file, size: result.received, sha256: result.sha256, mode: result.mode };
   } catch (err) {
     unlinkQuiet(part);
+    updateLog(`download failed: ${(err).message}`);
     return { ok: false, message: (err).message };
   }
 });
@@ -887,66 +1053,46 @@ ipcMain.handle('yimu:update-download', async (event, payload) => {
  * 更新包只包含程序文件（不含 data/），解压到临时目录后再 robocopy 覆盖，
  * 这样下载/解压失败时不会先把现有程序弄坏。
  */
-ipcMain.handle('yimu:update-install', async (_event, payload) => {
+ipcMain.handle('yimu:update-install', async (event, payload) => {
+  if (!isTrustedRendererUrl(event.senderFrame?.url, serverOrigin, IS_DEV)) {
+    return { ok: false, message: '拒绝非本地页面调用更新接口' };
+  }
   const file = path.resolve(String(payload?.path ?? ''));
   const dir = path.resolve(updateDir());
   const lowerFile = file.toLowerCase();
   const lowerDir = `${dir}${path.sep}`.toLowerCase();
-  if (!lowerFile.startsWith(lowerDir) || !fs.existsSync(file)) {
+  if (!lowerFile.startsWith(lowerDir) || !fs.existsSync(file) || !/^HorunDrama-\d+\.\d+\.\d+-win64-portable\.zip$/i.test(path.basename(file))) {
     return { ok: false, message: '更新包路径不合法或文件不存在' };
+  }
+  const metadataFile = `${file}.json`;
+  let metadata;
+  try {
+    metadata = JSON.parse(fs.readFileSync(metadataFile, 'utf8'));
+    const digest = await sha256File(file);
+    if (metadata.name !== path.basename(file) || metadata.sha256 !== digest || !isAllowedUpdateAsset(metadata.url, metadata.name)) {
+      return { ok: false, message: '更新包完整性校验失败' };
+    }
+  } catch {
+    return { ok: false, message: '找不到有效的更新包校验信息' };
   }
   const appDir = path.dirname(app.getPath('exe'));
   const launcher = path.join(appDir, 'HorunDrama.exe');
   const keepPortableMarker = fs.existsSync(path.join(appDir, 'portable.txt'));
-  const isZip = /\.zip$/i.test(file);
   const tmpDir = path.join(appDir, '.update-tmp');
+  const backupDir = path.join(appDir, '.update-backup');
   const helper = path.join(dir, 'apply-update.cmd');
-  const lines = [
-    '@echo off',
-    'setlocal',
-    `set "PID=${process.pid}"`,
-    `set "APP_DIR=${appDir}"`,
-    `set "PKG=${file}"`,
-    `set "UPD_DIR=${dir}"`,
-    `set "TMP=${tmpDir}"`,
-    `set "LAUNCH=${launcher}"`,
-    `set "KEEP_PORTABLE=${keepPortableMarker ? '1' : '0'}"`,
-    ':wait',
-    'tasklist /FI "PID eq %PID%" 2>nul | find "%PID%" >nul',
-    'if not errorlevel 1 (',
-    '  timeout /t 1 /nobreak >nul',
-    '  goto wait',
-    ')',
-    'timeout /t 2 /nobreak >nul',
-  ];
-  if (isZip) {
-    lines.push(
-      'if exist "%TMP%" rmdir /s /q "%TMP%"',
-      'mkdir "%TMP%"',
-      'if exist "%SystemRoot%\\System32\\tar.exe" (',
-      '  "%SystemRoot%\\System32\\tar.exe" -xf "%PKG%" -C "%TMP%"',
-      ') else (',
-      '  powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath \'%PKG%\' -DestinationPath \'%TMP%\' -Force"',
-      ')',
-      'robocopy "%TMP%" "%APP_DIR%" /E /NFL /NDL /NJH /NJS /NP >nul',
-      'if "%KEEP_PORTABLE%"=="0" del /q "%APP_DIR%\\portable.txt" 2>nul',
-      'rmdir /s /q "%TMP%"',
-    );
-  } else {
-    lines.push('start "" /wait "%PKG%" /S');
-  }
-  // 更新成功/安装结束后清掉下载缓存，避免用户目录里长期堆着 100~200MB 的安装包
-  lines.push(
-    'del /q "%PKG%" 2>nul',
-    'del /q "%UPD_DIR%\\*.zip" 2>nul',
-    'del /q "%UPD_DIR%\\*.exe" 2>nul',
-    'del /q "%UPD_DIR%\\*.part" 2>nul',
-    'del /q "%UPD_DIR%\\*.7z" 2>nul',
-    'rmdir /s /q "%TMP%" 2>nul',
-  );
-  lines.push('start "" "%LAUNCH%"', 'del "%~f0"', '');
+  const script = createUpdateScript({
+    pid: process.pid,
+    appDir,
+    file,
+    updateDir: dir,
+    tmpDir,
+    launcher,
+    backupDir,
+    keepPortableMarker,
+  });
   try {
-    fs.writeFileSync(helper, lines.join('\r\n'), 'utf8');
+    fs.writeFileSync(helper, script, 'utf8');
     require('node:child_process')
       .spawn('cmd.exe', ['/d', '/c', `"${helper}"`], { detached: true, stdio: 'ignore', windowsHide: true })
       .unref();
@@ -1069,9 +1215,13 @@ function createWindow(origin) {
     return { action: 'deny' };
   });
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith(origin) && !(IS_DEV && url.startsWith('http://127.0.0.1:5274'))) {
-      event.preventDefault();
-      void shell.openExternal(url);
+    if (isTrustedRendererUrl(url, origin, IS_DEV)) return;
+    event.preventDefault();
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') void shell.openExternal(parsed.toString());
+    } catch {
+      /* 拒绝无效外链 */
     }
   });
 
@@ -1141,7 +1291,7 @@ function ensureInstallRecords() {
     const userExe = fs.existsSync(path.join(exeDir, 'HorunDrama.exe'))
       ? path.join(exeDir, 'HorunDrama.exe')
       : process.execPath;
-    const link = { target: userExe, args: '--no-sandbox', cwd: exeDir, icon: userExe, iconIndex: 0 };
+    const link = { target: userExe, args: '', cwd: exeDir, icon: userExe, iconIndex: 0 };
 
     // 桌面 + 开始菜单（已存在就不覆盖，用户自己改过就别动）
     try {
@@ -1188,20 +1338,21 @@ app.whenReady().then(async () => {
   ensureInstallRecords();
   try {
     const origin = await boot();
-    if (apiToken !== '') {
-      await session.defaultSession.cookies.set({
-        url: origin,
-        name: 'horun_token',
-        value: apiToken,
-        path: '/',
-        httpOnly: true,
-        sameSite: 'strict',
-      });
-    }
+    await setCoreTokenCookie(origin);
     createWindow(origin);
   } catch (err) {
     console.error('[desktop] 启动失败', err);
     hideSplash();
+    const dataDir = dataRoot ?? path.join(app.getPath('appData'), 'HorunDrama');
+    const detail = err instanceof Error ? err.message : String(err);
+    try {
+      dialog.showErrorBox(
+        'HorunDrama 启动失败',
+        `${detail}\n\n数据目录：${dataDir}\n\n请把程序解压或安装到普通文件夹后再运行（不要放在受限的沙箱目录、系统保护目录或压缩包临时目录里）。`,
+      );
+    } catch {
+      /* 弹窗都失败时只能静默退出 */
+    }
     app.quit();
   }
 });
@@ -1211,6 +1362,11 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  coreRestartState.isShuttingDown = true;
+  if (coreRestartState.timer !== null) {
+    clearTimeout(coreRestartState.timer);
+    coreRestartState.timer = null;
+  }
   void coreProc?.kill?.();
   try {
     signerProc?.kill();

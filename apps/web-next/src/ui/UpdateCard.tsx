@@ -18,17 +18,13 @@ interface DownloadInfo {
   percent: number;
   path: string;
   message: string;
+  /** 主进程实际下载方式；'single' 表示多连接不可用（会明显变慢） */
+  mode: 'parallel' | 'single' | '';
 }
 
-/** 优先下载绿色包（解压即更新，安装版/便携版都能用），没有再退安装包。 */
+/** 只选择项目发布的 portable zip；主进程会再次校验仓库、版本和资产名。 */
 function pickAsset(assets: UpdateAsset[]): UpdateAsset | null {
-  return (
-    assets.find((a) => /win64-portable\.zip$/i.test(a.name)) ??
-    assets.find((a) => /\.zip$/i.test(a.name)) ??
-    assets.find((a) => /Setup.*\.exe$/i.test(a.name)) ??
-    assets.find((a) => /\.exe$/i.test(a.name)) ??
-    null
-  );
+  return assets.find((a) => /^HorunDrama-\d+\.\d+\.\d+-win64-portable\.zip$/i.test(a.name)) ?? null;
 }
 
 /**
@@ -44,7 +40,7 @@ export function UpdateCard(): JSX.Element | null {
   const setInfo = useApp((s) => s.setUpdateInfo);
   const open = useApp((s) => s.updateCardOpen);
   const closeCard = useApp((s) => s.closeUpdateCard);
-  const [dl, setDl] = useState<DownloadInfo>({ state: 'idle', percent: 0, path: '', message: '' });
+  const [dl, setDl] = useState<DownloadInfo>({ state: 'idle', percent: 0, path: '', message: '', mode: '' });
   const [installing, setInstalling] = useState(false);
   // 全屏时 portal 到全屏元素，否则更新卡片会被藏掉
   const [root, setRoot] = useState<HTMLElement>(
@@ -88,14 +84,19 @@ export function UpdateCard(): JSX.Element | null {
     const asset = pickAsset(target.assets);
     const bridge = window.yimu;
     if (asset === null || bridge?.updateDownload === undefined) {
-      setDl({ state: 'error', percent: 0, path: '', message: '请在 GitHub Releases 手动下载' });
+      setDl({ state: 'error', percent: 0, path: '', message: '请在 GitHub Releases 手动下载', mode: '' });
       return;
     }
-    setDl({ state: 'downloading', percent: 0, path: '', message: '正在后台下载更新包…' });
+    setDl({ state: 'downloading', percent: 0, path: '', message: '正在后台下载更新包…', mode: '' });
     const off = bridge.onUpdateProgress?.((p) => {
       setDl((prev) =>
         prev.state === 'downloading'
-          ? { ...prev, percent: Math.max(prev.percent, Math.min(1, p.percent)), message: '正在后台下载更新包…' }
+          ? {
+              ...prev,
+              percent: Math.max(prev.percent, Math.min(1, p.percent)),
+              mode: p.mode ?? prev.mode,
+              message: p.mode === 'single' ? '多连接不可用，已退回单连接下载（可能较慢）…' : '正在后台下载更新包…',
+            }
           : prev,
       );
     });
@@ -107,12 +108,12 @@ export function UpdateCard(): JSX.Element | null {
         digest: asset.digest,
       });
       if (res.ok && res.path !== undefined) {
-        setDl({ state: 'ready', percent: 1, path: res.path, message: '下载完成，可以立即重启更新' });
+        setDl({ state: 'ready', percent: 1, path: res.path, message: '下载完成，可以立即重启更新', mode: res.mode ?? '' });
       } else {
-        setDl({ state: 'error', percent: 0, path: '', message: res.message ?? '下载失败' });
+        setDl({ state: 'error', percent: 0, path: '', message: res.message ?? '下载失败', mode: '' });
       }
     } catch (err) {
-      setDl({ state: 'error', percent: 0, path: '', message: (err as Error).message });
+      setDl({ state: 'error', percent: 0, path: '', message: (err as Error).message, mode: '' });
     } finally {
       off?.();
     }
@@ -202,7 +203,9 @@ export function UpdateCard(): JSX.Element | null {
       {info.name !== '' && <p className="update-pop__name">{info.name}</p>}
       <p className="update-pop__text">
         {dl.state === 'downloading'
-          ? '新版本正在后台下载，下载完成后点“立即重启更新”即可，数据、登录和缓存都会保留。'
+          ? dl.mode === 'single'
+            ? '多连接不可用，已退回单连接下载（可能较慢）。下载完成后点“立即重启更新”即可，数据、登录和缓存都会保留。'
+            : '新版本正在后台下载，下载完成后点“立即重启更新”即可，数据、登录和缓存都会保留。'
           : dl.state === 'ready'
             ? '更新包已下载完成。点“立即重启更新”会退出程序、覆盖新版本并自动重新打开。'
             : dl.state === 'error'

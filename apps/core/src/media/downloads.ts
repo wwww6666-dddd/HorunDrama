@@ -14,6 +14,7 @@ import { resolveEpisodeStream, type StreamChoice } from '../sources/playback.ts'
 import { resolveWebStream } from '../sources/webplay.ts';
 import { transcodeEpisode } from './transcode.ts';
 import { getSettings } from '../store/settings.ts';
+import { safeName } from './safe-name.ts';
 import { createLogger } from '../util/log.ts';
 import {
   downloadSummary,
@@ -33,14 +34,6 @@ const active = new Map<string, AbortController>();
 let pumping = false;
 
 resetInterrupted();
-
-function safeName(value: string): string {
-  const cleaned = value
-    .replace(/[\\/:*?"<>|]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return cleaned === '' ? '未命名' : cleaned.slice(0, 80);
-}
 
 function qualitySuffix(definition: string): string {
   const clean = definition.replace(/[^0-9a-zA-Z]/g, '');

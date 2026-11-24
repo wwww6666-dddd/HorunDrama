@@ -7,10 +7,10 @@
 // 用法：node scripts/build-installer.mjs [--version x.y.z]
 //   前置：`pnpm --filter @horun/desktop run pack` 生成 release/win-unpacked（无需代码签名）。
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { createUninstallManifest } from './uninstall-manifest.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktop = resolve(here, '..');
@@ -26,8 +26,21 @@ const version =
     : JSON.parse(readFileSync(join(desktop, 'package.json'), 'utf8')).version;
 const outFile = join(release, `HorunDrama Setup ${version}.exe`);
 
+function removeTree(target) {
+  if (!existsSync(target)) return;
+  if (!lstatSync(target).isDirectory()) {
+    unlinkSync(target);
+    return;
+  }
+  for (const entry of readdirSync(target)) removeTree(join(target, entry));
+  rmdirSync(target);
+}
+
 if (!existsSync(payload)) throw new Error(`payload missing: ${payload}（先跑 pnpm --filter @horun/desktop run pack）`);
-const cleanPayload = mkdtempSync(join(tmpdir(), 'horundrama-installer-'));
+const tempBase = process.env.HORUN_BUILD_TMP;
+if (!tempBase) throw new Error('请设置 HORUN_BUILD_TMP 到非系统盘临时目录，避免安装器载荷写入系统盘缓存');
+mkdirSync(tempBase, { recursive: true });
+const cleanPayload = mkdtempSync(join(tempBase, 'horundrama-installer-'));
 
 // electron-builder 的 --dir 会复用 win-unpacked，旧便携版运行数据可能残留在里面。
 // 从干净副本制作安装器，确保不把本机数据库、缓存或便携标记带进安装包。
@@ -43,9 +56,13 @@ cpSync(payload, cleanPayload, {
   },
 });
 
+// 生成仅删除安装包自带文件的卸载片段。安装路径允许指向用户已有目录，
+// 因此卸载不能对 $INSTDIR 做递归删除。
+writeFileSync(join(cleanPayload, '.horundrama-uninstall.nsh'), createUninstallManifest(cleanPayload), 'utf8');
+
 /** makensis 用 electron-builder 缓存里的那份（打包机不一定单独装了 NSIS）。 */
 function findMakensis() {
-  const cache = join(process.env.LOCALAPPDATA ?? '', 'electron-builder', 'Cache');
+  const cache = process.env.ELECTRON_BUILDER_CACHE ?? join(process.env.LOCALAPPDATA ?? '', 'electron-builder', 'Cache');
   if (existsSync(cache)) {
     const out = execFileSync(
       'powershell',
@@ -85,5 +102,5 @@ try {
   console.log(`[installer] ok → ${outFile}（${sizeMb}MB，${((Date.now() - started) / 1000).toFixed(0)}s）`);
   console.log('[installer] 安装包可在未签名状态下安装；Windows SmartScreen 可能显示未知发布者提示。');
 } finally {
-  rmSync(cleanPayload, { recursive: true, force: true });
+  removeTree(cleanPayload);
 }
