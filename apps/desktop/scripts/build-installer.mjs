@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const desktop = resolve(here, '..');
 const release = join(desktop, 'release');
-const payload = join(release, 'win-unpacked');
+const payload = join(release, 'build', 'win-unpacked');
 const script = join(desktop, 'installer', 'setup.nsi');
 const icon = join(desktop, 'resources', 'icon.ico');
 
