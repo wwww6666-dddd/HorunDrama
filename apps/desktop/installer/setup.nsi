@@ -74,10 +74,38 @@ Function .onInit
 FunctionEnd
 
 Section "安装" INSTALL_SECTION
-  ; 目标目录里有旧版本就先清掉（数据在 %APPDATA%\HorunDrama，不受影响）
-  ${If} ${FileExists} "$INSTDIR\${APP_NAME}.exe"
-    RMDir /r "$INSTDIR"
-  ${EndIf}
+  ; 先确认用户选择的目录确实可写，避免 File /r 失败后出现 Retry/Ignore。
+  CreateDirectory "$INSTDIR"
+  ClearErrors
+  FileOpen $R0 "$INSTDIR\.horundrama-write-test" w
+  IfErrors targetNotWritable
+  FileClose $R0
+  Delete "$INSTDIR\.horundrama-write-test"
+
+  ; 只移除两个可能被旧进程锁定的程序文件；绝不递归删除整个目标目录，
+  ; 以免误删用户放在安装目录旁的数据或文件。
+  IfFileExists "$INSTDIR\${APP_NAME}.exe" 0 mainExeReady
+  SetFileAttributes "$INSTDIR\${APP_NAME}.exe" NORMAL
+  Delete "$INSTDIR\${APP_NAME}.exe"
+  IfFileExists "$INSTDIR\${APP_NAME}.exe" mainExeLocked 0
+mainExeReady:
+  IfFileExists "$INSTDIR\${APP_NAME}Core.exe" 0 coreExeReady
+  SetFileAttributes "$INSTDIR\${APP_NAME}Core.exe" NORMAL
+  Delete "$INSTDIR\${APP_NAME}Core.exe"
+  IfFileExists "$INSTDIR\${APP_NAME}Core.exe" coreExeLocked 0
+coreExeReady:
+  Goto filesReady
+
+targetNotWritable:
+  MessageBox MB_ICONSTOP|MB_OK "无法写入安装目录：$INSTDIR。请选择当前用户有写入权限的目录。"
+  Abort
+mainExeLocked:
+  MessageBox MB_ICONSTOP|MB_OK "无法替换 $INSTDIR\${APP_NAME}.exe。请关闭 HorunDrama 后重试。"
+  Abort
+coreExeLocked:
+  MessageBox MB_ICONSTOP|MB_OK "无法替换 $INSTDIR\${APP_NAME}Core.exe。请关闭 HorunDrama 后重试。"
+  Abort
+filesReady:
 
   SetOutPath "$INSTDIR"
   File /r "${PAYLOAD}\*.*"
