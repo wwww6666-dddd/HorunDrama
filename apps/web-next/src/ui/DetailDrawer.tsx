@@ -7,6 +7,13 @@ import { useAsync } from '../hooks/useAsync.ts';
 import { playHash } from '../routes.ts';
 import { DramaCard } from './DramaCard.tsx';
 
+/** 播放量按中文习惯压缩：1.2万 / 3.4亿 */
+function fmtPlay(n: number): string {
+  if (n >= 100_000_000) return `${(n / 100_000_000).toFixed(1).replace(/\.0$/, '')}亿`;
+  if (n >= 10_000) return `${(n / 10_000).toFixed(1).replace(/\.0$/, '')}万`;
+  return String(n);
+}
+
 /**
  * 详情抽屉：右侧滑出，点遮罩 / Esc / 切页面都会收起。
  *
@@ -128,6 +135,7 @@ function DetailBody({ detail }: { detail: SeriesDetail }): JSX.Element {
           <p className="detail-meta">
             {drama.episodeCount > 0 ? `共 ${drama.episodeCount} 集` : '短剧'}
             {drama.heatText !== '' && ` · ${drama.heatText}`}
+            {drama.playCount !== undefined && drama.playCount > 0 && ` · ${fmtPlay(drama.playCount)}次播放`}
             {drama.finished && ' · 已完结'}
           </p>
           {tags.length > 0 && (

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useLayoutEffect, useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { ROUTES } from '../routes.ts';
 import { useApp } from '../store.ts';
@@ -32,6 +32,41 @@ export function Dock(): JSX.Element {
   const [hidden, setHidden] = useState(false);
   /** 推荐页是沉浸式看片，dock 浮在画面上挡内容：闲置自动收起 */
   const [idle, setIdle] = useState(false);
+  const dockRef = useRef<HTMLElement | null>(null);
+  const itemRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const [indicator, setIndicator] = useState({ x: 0, y: 7, w: 0, h: 0, visible: false });
+
+  /** 选中底色用一块独立的滑动胶囊，而不是给每个 item 直接换背景。 */
+  const measure = useCallback((): void => {
+    const dock = dockRef.current;
+    const item = itemRefs.current.get(view);
+    if (dock === null || item === undefined) {
+      setIndicator((prev) => ({ ...prev, visible: false }));
+      return;
+    }
+    setIndicator({
+      x: item.offsetLeft,
+      y: item.offsetTop,
+      w: item.offsetWidth,
+      h: item.offsetHeight,
+      visible: true,
+    });
+  }, [view]);
+
+  useLayoutEffect(() => {
+    measure();
+    const dock = dockRef.current;
+    if (dock === null) return;
+    const raf = window.requestAnimationFrame(measure);
+    const observer = new ResizeObserver(measure);
+    observer.observe(dock);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [measure]);
 
   useEffect(() => {
     setHidden(false);
@@ -80,13 +115,29 @@ export function Dock(): JSX.Element {
   }, []);
 
   return (
-    <nav className="dock" aria-label="主导航" data-hidden={hidden} data-idle={idle}>
+    <nav className="dock" aria-label="主导航" data-hidden={hidden} data-idle={idle} ref={dockRef}>
+      {indicator.visible && (
+        <span
+          className="dock__indicator"
+          aria-hidden="true"
+          style={{
+            left: `${indicator.x}px`,
+            top: `${indicator.y}px`,
+            width: `${indicator.w}px`,
+            height: `${indicator.h}px`,
+          }}
+        />
+      )}
       {ROUTES.map((route) => {
         const Icon = ICONS[route.view];
         const active = route.view === view;
         return (
           <button
             key={route.view}
+            ref={(el) => {
+              if (el === null) itemRefs.current.delete(route.view);
+              else itemRefs.current.set(route.view, el);
+            }}
             type="button"
             className="dock__item"
             data-active={active}

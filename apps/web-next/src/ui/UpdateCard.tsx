@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -11,7 +11,7 @@ import {
 } from '../app-info.ts';
 import { useApp } from '../store.ts';
 
-type DownloadState = 'idle' | 'downloading' | 'ready' | 'error';
+type DownloadState = 'idle' | 'downloading' | 'paused' | 'ready' | 'error';
 
 interface DownloadInfo {
   state: DownloadState;
@@ -25,6 +25,23 @@ interface DownloadInfo {
 /** 只选择项目发布的 portable zip；主进程会再次校验仓库、版本和资产名。 */
 function pickAsset(assets: UpdateAsset[]): UpdateAsset | null {
   return assets.find((a) => /^HorunDrama-\d+\.\d+\.\d+-win64-portable\.zip$/i.test(a.name)) ?? null;
+}
+
+/** 把 GitHub Release 的 Markdown 降成可安全渲染的纯文本行，不引入额外解析依赖。 */
+function releaseNoteLines(notes: string): string[] {
+  return notes
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(/^#{1,6}\s*/g, '')
+        .replace(/^\s*[-*+]\s+/g, '• ')
+        .replace(/^\s*>\s*/g, '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/`([^`]+)`/g, '$1')
+        .trim(),
+    )
+    .filter((line) => line !== '' && !/^```/.test(line))
+    .slice(0, 24);
 }
 
 /**
@@ -42,6 +59,9 @@ export function UpdateCard(): JSX.Element | null {
   const closeCard = useApp((s) => s.closeUpdateCard);
   const [dl, setDl] = useState<DownloadInfo>({ state: 'idle', percent: 0, path: '', message: '', mode: '' });
   const [installing, setInstalling] = useState(false);
+  /** 暂停时保留这个标记：主进程 abort 后，等待中的下载 Promise 会以“取消”结束。 */
+  const pauseRequested = useRef(false);
+  const notes = info === null ? [] : releaseNoteLines(info.notes);
   // 全屏时 portal 到全屏元素，否则更新卡片会被藏掉
   const [root, setRoot] = useState<HTMLElement>(
     () => (document.fullscreenElement as HTMLElement | null) ?? document.body,
@@ -87,6 +107,7 @@ export function UpdateCard(): JSX.Element | null {
       setDl({ state: 'error', percent: 0, path: '', message: '请在 GitHub Releases 手动下载', mode: '' });
       return;
     }
+    pauseRequested.current = false;
     setDl({ state: 'downloading', percent: 0, path: '', message: '正在后台下载更新包…', mode: '' });
     const off = bridge.onUpdateProgress?.((p) => {
       setDl((prev) =>
@@ -107,16 +128,41 @@ export function UpdateCard(): JSX.Element | null {
         size: asset.size,
         digest: asset.digest,
       });
-      if (res.ok && res.path !== undefined) {
+      if (pauseRequested.current) {
+        setDl({ state: 'paused', percent: 0, path: '', message: '已暂停下载，继续后会重新开始', mode: '' });
+      } else if (res.ok && res.path !== undefined) {
         setDl({ state: 'ready', percent: 1, path: res.path, message: '下载完成，可以立即重启更新', mode: res.mode ?? '' });
       } else {
         setDl({ state: 'error', percent: 0, path: '', message: res.message ?? '下载失败', mode: '' });
       }
     } catch (err) {
-      setDl({ state: 'error', percent: 0, path: '', message: (err as Error).message, mode: '' });
+      if (pauseRequested.current) {
+        setDl({ state: 'paused', percent: 0, path: '', message: '已暂停下载，继续后会重新开始', mode: '' });
+      } else {
+        setDl({ state: 'error', percent: 0, path: '', message: (err as Error).message, mode: '' });
+      }
     } finally {
       off?.();
     }
+  };
+
+  /** 暂停：主进程 abort 当前 fetch；不保留半个包，继续时从 0 重新下。 */
+  const pauseDownload = async (): Promise<void> => {
+    pauseRequested.current = true;
+    const bridge = window.yimu;
+    if (bridge?.updateCancel !== undefined) await bridge.updateCancel().catch(() => undefined);
+    setDl((prev) => ({
+      ...prev,
+      state: 'paused',
+      percent: 0,
+      message: '已暂停。继续后会重新下载（分片下载不支持断点续传，避免半个包被误当成完整包）',
+    }));
+  };
+
+  const resumeDownload = (): void => {
+    if (info === null) return;
+    pauseRequested.current = false;
+    void startDownload(info);
   };
 
   // 发现新版本后自动开始后台下载（浏览器里没有 IPC，就只显示链接）
@@ -159,17 +205,27 @@ export function UpdateCard(): JSX.Element | null {
 
   const primaryLabel =
     dl.state === 'downloading'
-      ? `下载中 ${Math.round(dl.percent * 100)}%`
-      : dl.state === 'ready'
-        ? installing
-          ? '正在重启更新…'
-          : '立即重启更新'
-        : dl.state === 'error'
-          ? '重试下载'
-          : '查看更新说明';
+      ? '暂停下载'
+      : dl.state === 'paused'
+        ? '继续下载'
+        : dl.state === 'ready'
+          ? installing
+            ? '正在重启更新…'
+            : '立即重启更新'
+          : dl.state === 'error'
+            ? '重试下载'
+            : '查看更新说明';
 
   const onPrimary = (): void => {
-    if (dl.state === 'downloading') return;
+    if (installing) return;
+    if (dl.state === 'downloading') {
+      void pauseDownload();
+      return;
+    }
+    if (dl.state === 'paused') {
+      resumeDownload();
+      return;
+    }
     if (dl.state === 'ready') {
       void install();
       return;
@@ -201,34 +257,52 @@ export function UpdateCard(): JSX.Element | null {
       </div>
 
       {info.name !== '' && <p className="update-pop__name">{info.name}</p>}
+
+      {notes.length > 0 && (
+        <section className="update-pop__notes" aria-label="更新说明">
+          <div className="update-pop__notes-head">
+            <strong>更新说明</strong>
+            <span>v{info.latest}</span>
+          </div>
+          <div className="update-pop__notes-body">
+            {notes.map((line, i) => (
+              <p key={`${i}-${line}`} data-bullet={line.startsWith('• ')}>
+                {line}
+              </p>
+            ))}
+          </div>
+        </section>
+      )}
+
       <p className="update-pop__text">
         {dl.state === 'downloading'
           ? dl.mode === 'single'
-            ? '多连接不可用，已退回单连接下载（可能较慢）。下载完成后点“立即重启更新”即可，数据、登录和缓存都会保留。'
-            : '新版本正在后台下载，下载完成后点“立即重启更新”即可，数据、登录和缓存都会保留。'
-          : dl.state === 'ready'
-            ? '更新包已下载完成。点“立即重启更新”会退出程序、覆盖新版本并自动重新打开。'
-            : dl.state === 'error'
-              ? `自动下载不可用：${dl.message}。也可以点“查看更新说明”手动下载。`
-              : '新版本已经发布，正在检查更新包。本次更新完全自愿；如果这个软件帮到了你，也欢迎自愿打赏支持作者。'}
+            ? '多连接不可用，已退回单连接下载（可能较慢）。可以随时暂停；下载完成后点“立即重启更新”即可，数据、登录和缓存都会保留。'
+            : '新版本正在后台下载，可以随时暂停；下载完成后点“立即重启更新”即可，数据、登录和缓存都会保留。'
+          : dl.state === 'paused'
+            ? dl.message
+            : dl.state === 'ready'
+              ? '更新包已下载完成。点“立即重启更新”会退出程序、覆盖新版本并自动重新打开。'
+              : dl.state === 'error'
+                ? `自动下载不可用：${dl.message}。也可以点“更新说明”手动下载。`
+                : '新版本已经发布，正在检查更新包。本次更新完全自愿；如果这个软件帮到了你，也欢迎自愿打赏支持作者。'}
       </p>
 
-      {dl.state === 'downloading' && (
+      {(dl.state === 'downloading' || dl.state === 'paused') && (
         <div className="update-pop__progress" aria-label="下载进度">
           <span style={{ width: `${Math.round(dl.percent * 100)}%` }} />
         </div>
       )}
+      {dl.state === 'downloading' && (
+        <p className="update-pop__percent">{Math.round(dl.percent * 100)}%</p>
+      )}
 
       <div className="update-pop__actions">
-        <button
-          className="btn btn--primary"
-          disabled={dl.state === 'downloading' || installing}
-          onClick={onPrimary}
-        >
+        <button className="btn btn--primary" disabled={installing} onClick={onPrimary}>
           {primaryLabel}
         </button>
         <button className="btn btn--ghost" onClick={() => openExternalUrl(info.url)}>
-          更新说明
+          在 GitHub 查看
         </button>
         <button
           className="btn"

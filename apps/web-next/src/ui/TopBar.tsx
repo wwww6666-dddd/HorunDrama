@@ -178,7 +178,7 @@ export function TopBar(): JSX.Element {
             title={`发现新版本 v${updateInfo.latest}，点击查看更新`}
             onClick={openUpdateCard}
           >
-            <span aria-hidden="true">↑</span>
+            <span className="topbar__update-dot" aria-hidden="true" />
             新版本
           </button>
         )}

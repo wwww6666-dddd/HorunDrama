@@ -593,6 +593,8 @@
 
 /* ---------- 顶栏账号 chip ---------- */
 .account-chip {
+  position: relative;
+  isolation: isolate;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -604,6 +606,54 @@
   background: var(--glass-bg);
   color: var(--ink-1);
   cursor: pointer;
+  box-shadow: 0 6px 18px -14px rgba(0, 0, 0, 0.85);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out);
+}
+
+/* 胶囊边缘的一圈主题色高光；只用 1px 渐变环，不抢头像和昵称。 */
+.account-chip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--ember) 48%, transparent),
+    transparent 42%,
+    transparent 70%,
+    color-mix(in srgb, var(--ember-light) 30%, transparent)
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.account-chip:hover {
+  transform: translateY(-1px);
+  border-color: var(--glass-border-strong);
+  box-shadow: var(--glass-highlight), 0 12px 28px -18px var(--ember);
+}
+
+.account-chip:hover::before {
+  opacity: 1;
+}
+
+.account-chip > * {
+  position: relative;
+  z-index: 1;
+}
+
+.account-chip:active {
+  transform: scale(var(--press-scale));
 }
 
 .account-chip__avatar {
@@ -611,6 +661,7 @@
   height: 26px;
   border-radius: 999px;
   object-fit: cover;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ember) 35%, transparent);
 }
 
 .account-chip__avatar--empty {

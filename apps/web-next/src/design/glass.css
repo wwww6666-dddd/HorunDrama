@@ -148,6 +148,7 @@ input:focus-visible {
 
 .dock__item {
   position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -162,8 +163,31 @@ input:focus-visible {
   white-space: nowrap;
   transition:
     color var(--dur-base) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out),
-    background var(--dur-base) var(--ease-out);
+    transform var(--dur-fast) var(--ease-out);
+}
+
+/* 液态 tab：选中胶囊由 Dock.tsx 按按钮实测位置绘制，滑动 + 轻微回弹。 */
+.dock__indicator {
+  position: absolute;
+  z-index: 0;
+  border-radius: 18px;
+  background: var(--accent-grad);
+  box-shadow:
+    0 12px 26px -12px color-mix(in srgb, var(--ember) 85%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transition:
+    left 0.34s cubic-bezier(0.34, 1.56, 0.64, 1),
+    top 0.34s cubic-bezier(0.34, 1.56, 0.64, 1),
+    width 0.34s cubic-bezier(0.34, 1.56, 0.64, 1),
+    height 0.34s cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity var(--dur-base) var(--ease-out);
+  pointer-events: none;
+}
+
+.dock__item span {
+  position: relative;
+  z-index: 1;
+  transition: color 0.2s var(--ease-out) 60ms;
 }
 
 .dock__item:hover {
@@ -172,9 +196,10 @@ input:focus-visible {
 }
 
 .dock__item[data-active='true'] {
-  color: var(--text-inverse);
-  background: var(--accent-grad);
-  box-shadow: var(--glass-highlight), var(--glow-ember);
+  color: var(--accent-ink);
+  background: transparent;
+  box-shadow: none;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .dock__item:active {
@@ -236,10 +261,8 @@ input:focus-visible {
 }
 
 .dock__item[data-active='true'] {
-  background: var(--accent-grad);
-  box-shadow:
-    0 12px 26px -12px color-mix(in srgb, var(--ember) 85%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  background: transparent;
+  box-shadow: none;
 }
 
 .topbar__glyph {
@@ -395,10 +418,13 @@ input:focus-visible {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(60% 50% at 18% 8%, var(--bg-aurora-1), transparent 70%),
-    radial-gradient(55% 45% at 85% 12%, var(--bg-aurora-2), transparent 72%),
-    radial-gradient(70% 60% at 50% 108%, var(--bg-aurora-3), transparent 70%),
+    radial-gradient(58% 48% at 14% 4%, var(--bg-aurora-1), transparent 68%),
+    radial-gradient(52% 44% at 88% 10%, var(--bg-aurora-2), transparent 72%),
+    radial-gradient(68% 56% at 52% 108%, var(--bg-aurora-3), transparent 70%),
+    radial-gradient(48% 42% at 50% 46%, var(--bg-halo), transparent 74%),
+    radial-gradient(80% 70% at 50% 50%, var(--bg-aurora-4), transparent 82%),
     linear-gradient(180deg, var(--bg-base), var(--bg-deep));
+  transition: background 0.42s var(--ease-standard);
 }
 
 .backdrop::after {

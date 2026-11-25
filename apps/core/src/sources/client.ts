@@ -81,15 +81,23 @@ function heatText(n: number | undefined): string {
 }
 
 export function toDrama(s: SeriesSummary): Drama {
-  const extra = s as SeriesSummary & { heat?: number; category?: string; status?: number };
+  const extra = s as SeriesSummary & {
+    heat?: number | string;
+    category?: string;
+    status?: number | string;
+    play_count?: number | string;
+  };
+  const heat = Number(extra.heat);
+  const playCount = Number(extra.play_count);
   return {
     seriesId: s.id,
     title: s.title,
     cover: normalizeCover(s.cover_url ?? ''),
     intro: s.description ?? '',
     episodeCount: s.episode_count ?? 0,
-    finished: extra.status === 1,
-    heatText: heatText(extra.heat),
+    finished: Number(extra.status) === 1,
+    heatText: heatText(Number.isFinite(heat) ? heat : undefined),
+    playCount: Number.isFinite(playCount) ? playCount : 0,
     tags: extra.category !== undefined && extra.category !== '' ? [extra.category] : [],
   };
 }

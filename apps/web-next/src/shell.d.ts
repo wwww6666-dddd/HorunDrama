@@ -22,6 +22,8 @@ export interface YimuBridge {
     size?: number;
     digest?: string;
   }) => Promise<{ ok: boolean; path?: string; size?: number; sha256?: string; mode?: 'parallel' | 'single'; connections?: number; message?: string }>;
+  /** 自动更新：暂停/取消当前下载（继续时重新发起同一资产） */
+  updateCancel?: () => Promise<{ ok: boolean; message?: string }>;
   /** 自动更新：退出并解压覆盖，然后重启 */
   updateInstall?: (payload: { path: string }) => Promise<{ ok: boolean; message?: string }>;
   /** 下载进度：0~1 */

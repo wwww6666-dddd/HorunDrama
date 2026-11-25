@@ -39,7 +39,10 @@ async function enrich(items: SeriesSummary[]): Promise<FeedItem[]> {
   const ids = items.map((item) => item.id).slice(0, 30);
   const details = await withRetry('推荐流详情', () => client.getSeriesBatch(ids)).catch(() => []);
   const firstEpisode = new Map<string, { episodeId: string; no: number; digg: number; comment: number }>();
+  /** 详情里的 Series 比列表 summary 多 heat / play_count / tags，合并后再进卡片。 */
+  const fullSeries = new Map<string, SeriesSummary>();
   for (const detail of details) {
+    fullSeries.set(detail.series.id, detail.series);
     const ep = detail.episodes.find((e) => e.playable !== false) ?? detail.episodes[0];
     if (ep !== undefined) {
       firstEpisode.set(detail.series.id, {
@@ -55,7 +58,7 @@ async function enrich(items: SeriesSummary[]): Promise<FeedItem[]> {
     const first = firstEpisode.get(summary.id);
     if (first === undefined) continue;
     out.push({
-      ...toDrama(summary),
+      ...toDrama(fullSeries.get(summary.id) ?? summary),
       episodeId: first.episodeId,
       episodeNo: first.no,
       diggCount: first.digg,

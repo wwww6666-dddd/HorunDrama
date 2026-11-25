@@ -69,6 +69,27 @@
   line-height: 1;
 }
 
+.topbar__update-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ember);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ember) 18%, transparent);
+  animation: update-dot-pulse 2.4s var(--ease-standard) infinite;
+}
+
+@keyframes update-dot-pulse {
+  0%,
+  100% {
+    opacity: 0.65;
+    transform: scale(0.86);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
 :root[data-theme='light'] .topbar__update {
   background: color-mix(in srgb, var(--ember) 10%, #fff 12%);
 }
@@ -252,10 +273,10 @@
   opacity: 1;
   transform: scale(1.02);
   filter: none;
-  border-color: rgba(255, 122, 82, 0.65);
+  border-color: color-mix(in srgb, var(--ember) 65%, transparent);
   box-shadow:
     0 28px 60px -30px rgba(0, 0, 0, 0.98),
-    0 0 0 1px rgba(255, 122, 82, 0.2),
+    0 0 0 1px color-mix(in srgb, var(--ember) 20%, transparent),
     0 0 34px -14px color-mix(in srgb, var(--ember) 55%, transparent);
 }
 
@@ -281,6 +302,84 @@
   background-color: rgba(255, 255, 255, 0.04);
   background-size: cover;
   background-position: center;
+}
+
+/* 片单卡内的数据补全角标：热度优先，没有热度就显示总集数 */
+.feedv__side-badge {
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  bottom: 9px;
+  z-index: 2;
+  display: block;
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.72));
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: left;
+  pointer-events: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 独立滚动列表的触底哨兵：用户只滑左侧片单也会补下一页 */
+.feedv__side-foot {
+  position: sticky;
+  bottom: 2px;
+  z-index: 3;
+  flex: none;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 8px 0 2px;
+  pointer-events: none;
+}
+
+.feedv__side-more {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 92px;
+  height: 27px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(18, 15, 13, 0.76);
+  color: rgba(255, 255, 255, 0.7);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: color var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out);
+}
+
+.feedv__side-more:hover:not(:disabled) {
+  color: #fff;
+  border-color: color-mix(in srgb, var(--ember) 55%, transparent);
+  background: color-mix(in srgb, var(--ember) 16%, rgba(18, 15, 13, 0.8));
+}
+
+.feedv__side-more:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.feedv__side-done {
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 10px;
+}
+
+.feedv__spinner--sm {
+  width: 12px;
+  height: 12px;
+  border-width: 1.5px;
 }
 
 /* 视频舞台 */
@@ -857,6 +956,8 @@ html.is-player-fullscreen .pset-mask {
   right: 22px;
   z-index: 520;
   width: min(380px, calc(100vw - 32px));
+  max-height: calc(100vh - var(--topbar-h) - 28px);
+  overflow-y: auto;
   padding: 16px 18px 14px;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -981,6 +1082,76 @@ html.is-player-fullscreen .pset-mask {
   color: #ff9c7e;
 }
 
+/* 更新说明：直接读 GitHub Release body，长说明在卡片内滚动，不把卡片撑出屏幕。 */
+.update-pop__notes {
+  margin-top: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025));
+  overflow: hidden;
+}
+
+.update-pop__notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 11px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
+}
+
+.update-pop__notes-head strong {
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+}
+
+.update-pop__notes-head span {
+  color: var(--ember-light);
+  font-variant-numeric: tabular-nums;
+}
+
+.update-pop__notes-body {
+  max-height: 156px;
+  overflow-y: auto;
+  padding: 8px 11px 10px;
+  scrollbar-width: thin;
+}
+
+.update-pop__notes-body p {
+  margin: 0 0 5px;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 11px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.update-pop__notes-body p[data-bullet='true'] {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.update-pop__notes-body p:last-child {
+  margin-bottom: 0;
+}
+
+:root[data-theme='light'] .update-pop__notes {
+  border-color: rgba(60, 42, 32, 0.14);
+  background: rgba(255, 255, 255, 0.52);
+}
+
+:root[data-theme='light'] .update-pop__notes-head {
+  border-bottom-color: rgba(60, 42, 32, 0.12);
+  color: rgba(36, 26, 20, 0.8);
+}
+
+:root[data-theme='light'] .update-pop__notes-body p {
+  color: rgba(36, 26, 20, 0.66);
+}
+
+:root[data-theme='light'] .update-pop__notes-body p[data-bullet='true'] {
+  color: rgba(36, 26, 20, 0.86);
+}
+
 .update-pop__text {
   margin: 8px 0 0;
   font-size: 12px;
@@ -1007,6 +1178,18 @@ html.is-player-fullscreen .pset-mask {
   background: var(--accent-grad);
   box-shadow: 0 0 12px color-mix(in srgb, var(--ember) 60%, transparent);
   transition: width 0.28s var(--ease-out);
+}
+
+.update-pop__percent {
+  margin: 5px 1px 0;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-theme='light'] .update-pop__percent {
+  color: rgba(36, 26, 20, 0.46);
 }
 
 .update-pop__actions {

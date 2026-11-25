@@ -1,7 +1,7 @@
 {
   "name": "horun-drama",
   "private": true,
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "HorunDrama · 个人自用的 Windows 短剧播放器（重做中）",
   "type": "module",
   "packageManager": "pnpm@12.18.0",

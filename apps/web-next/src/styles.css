@@ -143,6 +143,33 @@ code {
   margin-left: auto;
 }
 
+/* 顶栏图标做成轻量胶囊按钮：和账号 chip、dock 选中态共用一套玻璃语言 */
+.topbar__actions .btn--icon {
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-2) 38%, transparent);
+  color: var(--text-2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition:
+    color var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.topbar__actions .btn--icon:hover {
+  color: var(--text-1);
+  border-color: var(--glass-border-strong);
+  background: color-mix(in srgb, var(--ember) 10%, var(--surface-2));
+  transform: translateY(-1px);
+}
+
+.topbar__actions .btn--icon:active {
+  transform: scale(var(--press-scale));
+}
+
 /* 核心连接指示：三个状态，不打扰但一眼能看出 */
 .core-dot {
   width: 7px;

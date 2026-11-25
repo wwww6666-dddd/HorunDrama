@@ -1,13 +1,18 @@
 param(
   [string]$Version = (Get-Content -Raw (Join-Path $PSScriptRoot '..\package.json') | ConvertFrom-Json).version,
-  [string]$AcceptDir = ''
+  [string]$AcceptDir = '',
+  [string]$SourceDir = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $desktop = Resolve-Path (Join-Path $PSScriptRoot '..')
 $repo = Resolve-Path (Join-Path $desktop '..\..')
 $release = Join-Path $desktop 'release'
-$source = Join-Path $release 'build\win-unpacked'
+$source = if ([string]::IsNullOrWhiteSpace($SourceDir)) {
+  Join-Path $release 'build\win-unpacked'
+} else {
+  (Resolve-Path -LiteralPath $SourceDir).Path
+}
 if (-not (Test-Path -LiteralPath $source)) {
   throw "Payload not found: $source. Run pnpm --filter @horun/desktop run pack first."
 }

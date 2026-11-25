@@ -9,6 +9,8 @@ export interface Drama {
   episodeCount: number;
   finished: boolean;
   heatText: string;
+  /** 上游 play_count，列表详情合并后补全；0 表示上游没给 */
+  playCount?: number;
   tags: string[];
 }
 

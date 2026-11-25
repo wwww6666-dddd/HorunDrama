@@ -738,6 +738,15 @@ ipcMain.handle('yimu:copy-text', (_e, text) => {
 // 一个 cmd 脚本等待进程结束、解压覆盖程序目录、再启动新版本。数据目录不在
 // 更新包里，所以设置/登录/缓存都会保留。
 const UPDATE_MAX_BYTES = 420 * 1024 * 1024;
+/** 当前正在运行的更新下载；暂停/取消时 abort 它。 */
+let activeUpdateController = null;
+
+/** 让一次下载同时受“暂停按钮”和 30 分钟总超时控制。 */
+function updateFetchSignal(controller) {
+  const timeout = AbortSignal.timeout(30 * 60 * 1000);
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any([controller.signal, timeout]);
+  return controller.signal;
+}
 
 /** 更新文件放在数据目录的 updates/，不污染安装目录。 */
 function updateDir() {
@@ -849,12 +858,12 @@ function progressSender(event, total, mode) {
 }
 
 /** 单连接下载（兜底路径；fallbackReason 非空说明多连接不可用）。 */
-async function downloadSingle(url, part, payload, event, fallbackReason = '') {
+async function downloadSingle(url, part, payload, event, fallbackReason = '', signal) {
   const started = Date.now();
   const res = await fetchUpdate(url, {
     redirect: 'follow',
     headers: { 'user-agent': updaterUserAgent() },
-    signal: AbortSignal.timeout(30 * 60 * 1000),
+    signal: signal ?? AbortSignal.timeout(30 * 60 * 1000),
   });
   if (!res.ok || res.body === null) throw new Error(`下载失败 HTTP ${res.status}`);
   const total = Number(res.headers.get('content-length') ?? payload?.size ?? 0);
@@ -894,7 +903,7 @@ async function downloadSingle(url, part, payload, event, fallbackReason = '') {
  * 把文件切成 N 段并发请求，最后按顺序拼接并算 SHA-256。
  * GitHub Release 的签名资源支持 Range，通常比单连接快 2~5 倍。
  */
-async function downloadParallel(url, part, total, payload, event) {
+async function downloadParallel(url, part, total, payload, event, signal) {
   const started = Date.now();
   const connections = total > 80 * 1024 * 1024 ? 8 : 4;
   const chunkSize = Math.ceil(total / connections);
@@ -916,7 +925,7 @@ async function downloadParallel(url, part, total, payload, event) {
               range: `bytes=${start}-${end}`,
               'user-agent': updaterUserAgent(),
             },
-            signal: AbortSignal.timeout(30 * 60 * 1000),
+            signal: signal ?? AbortSignal.timeout(30 * 60 * 1000),
           });
           if (res.status !== 206 || res.body === null) {
             throw new Error(`分片下载失败 HTTP ${res.status}`);
@@ -991,6 +1000,8 @@ ipcMain.handle('yimu:update-download', async (event, payload) => {
   const file = path.join(updateDir(), name);
   const metadataFile = `${file}.json`;
   const part = `${file}.part`;
+  const controller = new AbortController();
+  activeUpdateController = controller;
   try {
     const knownSize = Number(payload?.size ?? 0);
     if (fs.existsSync(file)) {
@@ -1013,17 +1024,19 @@ ipcMain.handle('yimu:update-download', async (event, payload) => {
     let result;
     if (knownSize >= 32 * 1024 * 1024) {
       try {
-        result = await downloadParallel(url, part, knownSize, payload, event);
+        result = await downloadParallel(url, part, knownSize, payload, event, updateFetchSignal(controller));
       } catch (parallelErr) {
+        // 用户暂停/取消时不要再退单连接：否则会在已 abort 的 signal 上白跑一次。
+        if (controller.signal.aborted) throw parallelErr;
         // 某些代理/CDN 不支持 Range 或返回 200：退回单连接，不要因此更新失败。
         // 必须同时落日志并通知渲染进程，否则用户只会感觉“更新很慢”（§11.6.1）。
         updateLog(`fallback to single: ${parallelErr.message}`);
         console.warn('[update] 多连接下载失败，回退单连接:', parallelErr.message);
         unlinkQuiet(part);
-        result = await downloadSingle(url, part, payload, event, parallelErr.message);
+        result = await downloadSingle(url, part, payload, event, parallelErr.message, updateFetchSignal(controller));
       }
     } else {
-      result = await downloadSingle(url, part, payload, event);
+      result = await downloadSingle(url, part, payload, event, '', updateFetchSignal(controller));
     }
 
     if (expected !== result.sha256) {
@@ -1044,7 +1057,20 @@ ipcMain.handle('yimu:update-download', async (event, payload) => {
     unlinkQuiet(part);
     updateLog(`download failed: ${(err).message}`);
     return { ok: false, message: (err).message };
+  } finally {
+    if (activeUpdateController === controller) activeUpdateController = null;
   }
+});
+
+/** 暂停/取消更新下载；渲染层把状态切到 paused，继续时重新发起同一资产下载。 */
+ipcMain.handle('yimu:update-cancel', (event) => {
+  if (!isTrustedRendererUrl(event.senderFrame?.url, serverOrigin, IS_DEV)) {
+    return { ok: false, message: '拒绝非本地页面调用更新接口' };
+  }
+  if (activeUpdateController === null) return { ok: false, message: '没有正在下载的更新包' };
+  updateLog('cancel requested');
+  activeUpdateController.abort();
+  return { ok: true };
 });
 
 /**

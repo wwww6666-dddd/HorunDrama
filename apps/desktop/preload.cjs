@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('yimu', {
   openExternal: (url) => ipcRenderer.invoke('yimu:open-external', url),
   /** 自动更新：后台下载更新包（主进程写文件，带进度） */
   updateDownload: (payload) => ipcRenderer.invoke('yimu:update-download', payload),
+  /** 自动更新：暂停/取消当前下载（继续时重新发起同一资产） */
+  updateCancel: () => ipcRenderer.invoke('yimu:update-cancel'),
   /** 自动更新：退出并解压覆盖，然后重启 */
   updateInstall: (payload) => ipcRenderer.invoke('yimu:update-install', payload),
   /** 下载进度：{ received, total, percent } */

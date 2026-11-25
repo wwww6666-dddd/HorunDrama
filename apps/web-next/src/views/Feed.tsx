@@ -63,6 +63,11 @@ function FeedSideCard({
           style={{ backgroundImage: `url("${coverOf(item)}")` }}
           aria-hidden="true"
         />
+        {(item.heatText !== '' || item.episodeCount > 0) && (
+          <span className="feedv__side-badge">
+            {item.heatText !== '' ? item.heatText : `全 ${item.episodeCount} 集`}
+          </span>
+        )}
         <span className="tilt-glare" aria-hidden="true" />
       </span>
     </button>
@@ -84,6 +89,8 @@ export function Feed(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState('');
   const [tab, setTab] = useState<FeedTab>('recommend');
   const [slideDir, setSlideDir] = useState(1);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -375,29 +382,42 @@ export function Feed(): JSX.Element {
   const load = useCallback(
     async (reset: boolean, refresh = false) => {
       if (loadingRef.current) return;
+      // 没有游标却还显示 hasMore 时不再空转；正常分页游标为空且还有下一页的情况
+      // 只有 follow（一次取完），那边 hasMore 已经是 false。
+      if (!reset && cursorRef.current === '') return;
       loadingRef.current = true;
-      if (reset) setLoading(true);
+      if (reset) {
+        setLoading(true);
+      } else {
+        setLoadingMore(true);
+      }
       try {
         const res = await api.feed(reset ? '' : cursorRef.current, tab, refresh);
         cursorRef.current = res.cursor;
         setHasMore(res.hasMore);
+        setMoreError('');
         setItems((prev) => {
           if (reset) return res.items;
           const seen = new Set(prev.map((item) => item.seriesId));
           return [...prev, ...res.items.filter((item) => !seen.has(item.seriesId))];
         });
+        // 上游有时 has_more=true 但这一页为空：直接收口，避免触底后无限重试。
+        if (!reset && res.items.length === 0) setHasMore(false);
         if (reset) {
           setIndex(0);
           window.requestAnimationFrame(() => {
             scrollerRef.current?.scrollTo({ top: 0 });
+            if (sideListRef.current !== null) sideListRef.current.scrollTop = 0;
           });
         }
         setError(null);
       } catch (err) {
-        setError((err as Error).message);
+        if (reset) setError((err as Error).message);
+        else setMoreError((err as Error).message);
       } finally {
         loadingRef.current = false;
         setLoading(false);
+        setLoadingMore(false);
         setLoadedOnce(true);
         setSwitching(false);
       }
@@ -422,7 +442,17 @@ export function Feed(): JSX.Element {
     if (el === null) return;
     const i = Math.round(el.scrollTop / Math.max(1, el.clientHeight));
     if (i !== index) setIndex(i);
-    if (hasMore && i >= items.length - 3) void load(false);
+    if (hasMore && !loadingRef.current && i >= items.length - 3) void load(false);
+  };
+
+  /**
+   * 左侧片单是独立滚动容器，不共享舞台的 scroll 事件。
+   * 用户只滑片单到底时也必须补下一页，否则看起来就是“到底了不加载”。
+   */
+  const onSideScroll = (): void => {
+    const el = sideListRef.current;
+    if (el === null || !hasMore || loadingRef.current) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 160) void load(false);
   };
 
   const next = (): void => {
@@ -495,7 +525,7 @@ export function Feed(): JSX.Element {
             {items.length > 0 ? `${Math.min(index + 1, items.length)} / ${items.length}` : '—'}
           </span>
         </div>
-        <div className="feedv__side-list" ref={sideListRef}>
+        <div className="feedv__side-list" ref={sideListRef} onScroll={onSideScroll}>
           {items.map((item, i) => (
             <FeedSideCard
               key={item.seriesId}
@@ -507,6 +537,21 @@ export function Feed(): JSX.Element {
               }}
             />
           ))}
+          <div className="feedv__side-foot">
+            {hasMore ? (
+              <button
+                type="button"
+                className="feedv__side-more"
+                disabled={loadingMore}
+                onClick={() => void load(false)}
+              >
+                {loadingMore ? <span className="feedv__spinner feedv__spinner--sm" /> : null}
+                {loadingMore ? '加载中…' : moreError !== '' ? '加载失败，重试' : '加载更多'}
+              </button>
+            ) : (
+              <span className="feedv__side-done">已加载全部</span>
+            )}
+          </div>
         </div>
       </aside>
 
@@ -542,9 +587,17 @@ export function Feed(): JSX.Element {
             />
           ))}
           {hasMore && (
-            <div className="feedv__more">
-              <div className="feedv__spinner" />
-              <p>继续加载…</p>
+            <div className="feedv__more" data-loading={loadingMore}>
+              {loadingMore ? (
+                <>
+                  <div className="feedv__spinner" />
+                  <p>正在加载下一页…</p>
+                </>
+              ) : (
+                <button type="button" className="feedv__more-btn" onClick={() => void load(false)}>
+                  {moreError !== '' ? `加载失败：${moreError}，点击重试` : '继续下滑，自动加载下一页'}
+                </button>
+              )}
             </div>
           )}
           {!hasMore && items.length > 0 && <div className="feedv__more">没有更多了</div>}
@@ -838,8 +891,9 @@ function FeedSlide({
 
     void (async () => {
       try {
-        // wait=1：和剧场页同一套"等文件再播"，避免推荐页默默播 360p
-        let current = await api.play(item.episodeId, quality, true, CAN_PLAY_HEVC, false, true);
+        // wait=0：和剧场页一致，先拿到能播的地址（本地缓存/官网直连）立刻起播；
+        // 高清在后台升级，转好后由 upgrade 队列原地换源，不再让推荐页干等整集转码。
+        let current = await api.play(item.episodeId, quality, true, CAN_PLAY_HEVC, false, false);
         if (cancelled) return;
         setJob(current);
         while (!cancelled && current.state !== 'ready' && current.state !== 'failed') {

@@ -8,6 +8,7 @@ export interface Drama {
   episodeCount: number;
   finished: boolean;
   heatText: string;
+  playCount?: number;
   tags: string[];
 }
 

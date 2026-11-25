@@ -5,7 +5,7 @@
 import os from 'node:os';
 import path from 'node:path';
 
-export const VERSION = '2.1.0';
+export const VERSION = '2.2.0';
 export const HOST = '127.0.0.1';
 export const PORT = Number.parseInt(process.env.HORUN_PORT ?? '5880', 10);
 
