@@ -40,7 +40,7 @@
 
 .lib2-tab[data-active='true'] {
   color: #fff;
-  background: linear-gradient(180deg, #ff6a44, var(--ember));
+  background: var(--accent-grad);
   box-shadow: var(--glow-ember);
 }
 
@@ -194,7 +194,7 @@
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #ffa25c, var(--ember));
+  background: var(--accent-grad);
 }
 
 .lib2-card__actions {

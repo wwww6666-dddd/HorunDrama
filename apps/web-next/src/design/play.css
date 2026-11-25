@@ -34,14 +34,14 @@
   z-index: 5;
   display: grid;
   place-items: center;
-  background: radial-gradient(60% 60% at 50% 45%, rgba(255, 77, 46, 0.1), transparent 70%);
+  background: radial-gradient(60% 60% at 50% 45%, color-mix(in srgb, var(--ember) 10%, transparent), transparent 70%);
 }
 
 /* 下面还挂着上一集的画面：压暗它，才算真的"切过去了"。
    延迟 0.12s 淡入 —— 命中缓存时新集几十毫秒就绪，卡片不该闪一下。 */
 .play__waiting[data-over='true'] {
   background:
-    radial-gradient(60% 60% at 50% 45%, rgba(255, 77, 46, 0.12), transparent 70%),
+    radial-gradient(60% 60% at 50% 45%, color-mix(in srgb, var(--ember) 12%, transparent), transparent 70%),
     rgba(6, 5, 5, 0.88);
   animation: play-waiting-in 0.24s var(--ease-out) 0.12s both;
 }
@@ -100,7 +100,7 @@
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #ff7a52, var(--ember));
+  background: var(--accent-grad);
   transition: width var(--dur-slow) var(--ease-out);
 }
 
@@ -192,7 +192,7 @@
 
 .play__sheet-ep[data-active='true'] {
   color: #fff;
-  background: linear-gradient(180deg, #ff6a44, var(--ember));
+  background: var(--accent-grad);
   border-color: transparent;
   box-shadow: var(--glow-ember);
 }
@@ -639,7 +639,7 @@
 
 .xg-extras__input:focus {
   outline: none;
-  border-color: rgba(255, 77, 46, 0.65);
+  border-color: color-mix(in srgb, var(--ember) 65%, transparent);
 }
 
 .play__meta {
@@ -736,7 +736,7 @@
 
 .play__comment-input:focus {
   outline: none;
-  border-color: rgba(255, 77, 46, 0.6);
+  border-color: color-mix(in srgb, var(--ember) 60%, transparent);
 }
 
 .play__top {

@@ -1,45 +1,71 @@
 /**
  * 设计 token —— 只放"数值与语义"，不放组件样式。
- * 视觉理念沿用旧版：透明玻璃 + 光感（四层：模糊背景 → 玻璃 → 顶边高光 → 内容投影）。
+ *
+ * 2.1.0 起把颜色拆成三层：
+ *   1) 基础中性色（surface / text / line）
+ *   2) 主题色阶（每个 accent 都有 base / light / strong / soft / gradient）
+ *   3) 语义色（success / warning / danger / focus）
+ * 组件只消费语义 token，不再写死某个橙色。
  */
 
 :root {
   color-scheme: dark;
 
+  /* ---------- 中性表面 ---------- */
+  --surface-0: #08090c;
+  --surface-1: #0e1015;
+  --surface-2: #151821;
+  --surface-3: #1d212c;
+  --line-1: rgba(244, 244, 245, 0.12);
+  --line-2: rgba(244, 244, 245, 0.2);
+
   /* ---------- 玻璃 ---------- */
-  --glass-bg: linear-gradient(180deg, rgba(242, 234, 224, 0.14), rgba(242, 234, 224, 0.05));
-  --glass-bg-strong: linear-gradient(180deg, rgba(242, 234, 224, 0.2), rgba(242, 234, 224, 0.07));
-  --glass-border: rgba(242, 234, 224, 0.16);
-  --glass-border-strong: rgba(242, 234, 224, 0.26);
-  --glass-blur: blur(22px) saturate(1.6);
-  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -1px 0 rgba(0, 0, 0, 0.35);
+  --glass-bg: linear-gradient(180deg, rgba(244, 244, 245, 0.12), rgba(244, 244, 245, 0.04));
+  --glass-bg-strong: linear-gradient(180deg, rgba(244, 244, 245, 0.18), rgba(244, 244, 245, 0.06));
+  --glass-border: rgba(244, 244, 245, 0.14);
+  --glass-border-strong: rgba(244, 244, 245, 0.24);
+  --glass-blur: blur(22px) saturate(1.55);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 -1px 0 rgba(0, 0, 0, 0.38);
   --glass-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.9);
   --glass-shadow-lift: 0 26px 56px -28px rgba(0, 0, 0, 0.95);
 
-  /* ---------- 光晕 ---------- */
-  --ember: #ff4d2e;
-  --ember-soft: rgba(255, 77, 46, 0.35);
-  --glow-ember: 0 0 0 1px rgba(255, 77, 46, 0.35), 0 6px 18px -8px rgba(255, 77, 46, 0.8);
-  --glow-ember-strong: 0 0 0 1px rgba(255, 77, 46, 0.5), 0 10px 28px -10px rgba(255, 77, 46, 0.95);
-
   /* ---------- 背景 ---------- */
-  --bg-base: #0a0908;
-  --bg-deep: #060505;
-  --bg-aurora-1: rgba(255, 77, 46, 0.16);
-  --bg-aurora-2: rgba(122, 92, 255, 0.12);
-  --bg-aurora-3: rgba(255, 168, 92, 0.08);
+  --bg-base: #08090c;
+  --bg-deep: #050608;
+  --bg-aurora-1: color-mix(in srgb, var(--ember) 18%, transparent);
+  --bg-aurora-2: color-mix(in srgb, #7c3aed 12%, transparent);
+  --bg-aurora-3: color-mix(in srgb, #f59e0b 8%, transparent);
 
   /* ---------- 文本 ---------- */
-  --text-1: #f3ece4;
-  --text-2: rgba(243, 236, 228, 0.72);
-  --text-3: rgba(243, 236, 228, 0.48);
-  --text-inverse: #0a0908;
-  /* 悬停时铺的一层薄色，比直接写 rgba 更省心（浅色下要反过来） */
-  --hover-wash: rgba(242, 234, 224, 0.09);
+  --text-1: #f4f4f5;
+  --text-2: rgba(244, 244, 245, 0.72);
+  --text-3: rgba(244, 244, 245, 0.46);
+  --text-inverse: #0b0c10;
+  --hover-wash: rgba(244, 244, 245, 0.08);
+
+  /* ---------- 语义色 ---------- */
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #fb7185;
+  --focus-ring: color-mix(in srgb, var(--ember) 72%, white 4%);
+
+  /* ---------- 主题色（默认暖橙） ---------- */
+  --ember: #ff4d2e;
+  --ember-light: #ff8a63;
+  --ember-strong: #d92d16;
+  --accent-ink: #1a0d09;
+  --ember-soft: color-mix(in srgb, var(--ember) 35%, transparent);
+  --accent-grad: linear-gradient(160deg, var(--ember-light), var(--ember) 52%, var(--ember-strong));
+  --accent-wash: color-mix(in srgb, var(--ember) 14%, transparent);
+  --glow-ember: 0 0 0 1px color-mix(in srgb, var(--ember) 35%, transparent),
+    0 6px 18px -8px color-mix(in srgb, var(--ember) 80%, transparent);
+  --glow-ember-strong: 0 0 0 1px color-mix(in srgb, var(--ember) 50%, transparent),
+    0 10px 28px -10px color-mix(in srgb, var(--ember) 95%, transparent);
 
   /* ---------- 圆角 ---------- */
   --r-glass: 22px;
   --r-card: 14px;
+  --r-lg: 18px;
   --r-chip: 999px;
   --r-sm: 10px;
 
@@ -51,12 +77,14 @@
   --s-5: 24px;
   --s-6: 32px;
   --s-7: 48px;
+  --s-8: 64px;
 
   /* ---------- 字号 ---------- */
   --font-sans: 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', system-ui, sans-serif;
   --font-serif: 'Songti SC', 'Source Han Serif SC', 'Noto Serif SC', serif;
   --fs-display: 34px;
   --fs-title: 22px;
+  --fs-h2: 18px;
   --fs-body: 14px;
   --fs-caption: 12px;
   --lh-tight: 1.2;
@@ -64,10 +92,12 @@
 
   /* ---------- 动效 ---------- */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --dur-fast: 120ms;
   --dur-base: 220ms;
   --dur-slow: 420ms;
+  --press-scale: 0.97;
 
   /* ---------- 层级 ---------- */
   --z-content: 1;
@@ -81,69 +111,129 @@
   --dock-h: 68px;
   --page-pad: clamp(20px, 3vw, 44px);
   --content-max: 1560px;
+
+  /* 主题切换圆形揭示的起点（store.ts 在点击时写入） */
+  --theme-x: 50%;
+  --theme-y: 50%;
+  --theme-r: 120vmax;
 }
 
-/* 浅色：玻璃仍是"暖白"，只把底色提亮；高光/描边保留（关键） */
+/* 浅色：玻璃仍是暖白，但表面改成中性冷灰，避免整页发黄 */
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --glass-bg: linear-gradient(180deg, rgba(255, 252, 246, 0.72), rgba(255, 252, 246, 0.42));
-  --glass-bg-strong: linear-gradient(180deg, rgba(255, 252, 246, 0.88), rgba(255, 252, 246, 0.6));
-  --glass-border: rgba(60, 42, 32, 0.14);
-  --glass-border-strong: rgba(60, 42, 32, 0.22);
-  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(60, 42, 32, 0.08);
-  --glass-shadow: 0 18px 40px -28px rgba(60, 42, 32, 0.45);
-  --glass-shadow-lift: 0 26px 56px -30px rgba(60, 42, 32, 0.55);
+  --surface-0: #f3f2ef;
+  --surface-1: #faf9f7;
+  --surface-2: #ffffff;
+  --surface-3: #ecebe7;
+  --line-1: rgba(24, 24, 27, 0.12);
+  --line-2: rgba(24, 24, 27, 0.2);
 
-  --bg-base: #f4ece2;
-  --bg-deep: #efe4d6;
-  --bg-aurora-1: rgba(255, 77, 46, 0.12);
-  --bg-aurora-2: rgba(122, 92, 255, 0.08);
-  --bg-aurora-3: rgba(255, 168, 92, 0.14);
+  --glass-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.46));
+  --glass-bg-strong: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.64));
+  --glass-border: rgba(24, 24, 27, 0.12);
+  --glass-border-strong: rgba(24, 24, 27, 0.2);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(24, 24, 27, 0.06);
+  --glass-shadow: 0 18px 40px -28px rgba(24, 24, 27, 0.28);
+  --glass-shadow-lift: 0 26px 56px -30px rgba(24, 24, 27, 0.36);
 
-  --text-1: #241a14;
-  --text-2: rgba(36, 26, 20, 0.72);
-  --text-3: rgba(36, 26, 20, 0.48);
-  --text-inverse: #fffaf4;
-  --hover-wash: rgba(36, 26, 20, 0.07);
+  --bg-base: #f3f2ef;
+  --bg-deep: #e9e7e2;
+  --bg-aurora-1: color-mix(in srgb, var(--ember) 12%, transparent);
+  --bg-aurora-2: color-mix(in srgb, #7c3aed 7%, transparent);
+  --bg-aurora-3: color-mix(in srgb, #f59e0b 10%, transparent);
+
+  --text-1: #18181b;
+  --text-2: rgba(24, 24, 27, 0.72);
+  --text-3: rgba(24, 24, 27, 0.46);
+  --text-inverse: #ffffff;
+  --hover-wash: rgba(24, 24, 27, 0.06);
 }
 
-/* 主题色：在深/浅之外再选一个强调色 */
+/* ---------- 主题色阶 ---------- */
+:root[data-accent='ember'] {
+  --ember: #ff4d2e;
+  --ember-light: #ff8a63;
+  --ember-strong: #d92d16;
+  --accent-ink: #1a0d09;
+}
+
 :root[data-accent='jade'] {
   --ember: #2fbf9b;
-  --ember-soft: rgba(47, 191, 155, 0.35);
-  --glow-ember: 0 0 0 1px rgba(47, 191, 155, 0.35), 0 6px 18px -8px rgba(47, 191, 155, 0.8);
-  --glow-ember-strong: 0 0 0 1px rgba(47, 191, 155, 0.5), 0 10px 28px -10px rgba(47, 191, 155, 0.95);
+  --ember-light: #5fd8b8;
+  --ember-strong: #1f9f7f;
+  --accent-ink: #04211a;
 }
 
 :root[data-accent='violet'] {
   --ember: #8b5cf6;
-  --ember-soft: rgba(139, 92, 246, 0.35);
-  --glow-ember: 0 0 0 1px rgba(139, 92, 246, 0.35), 0 6px 18px -8px rgba(139, 92, 246, 0.8);
-  --glow-ember-strong: 0 0 0 1px rgba(139, 92, 246, 0.5), 0 10px 28px -10px rgba(139, 92, 246, 0.95);
+  --ember-light: #b18cff;
+  --ember-strong: #7442e8;
+  --accent-ink: #ffffff;
 }
 
 :root[data-accent='azure'] {
   --ember: #3b82f6;
-  --ember-soft: rgba(59, 130, 246, 0.35);
-  --glow-ember: 0 0 0 1px rgba(59, 130, 246, 0.35), 0 6px 18px -8px rgba(59, 130, 246, 0.8);
-  --glow-ember-strong: 0 0 0 1px rgba(59, 130, 246, 0.5), 0 10px 28px -10px rgba(59, 130, 246, 0.95);
+  --ember-light: #6aa9ff;
+  --ember-strong: #2563eb;
+  --accent-ink: #ffffff;
 }
 
-:root[data-accent='jade'] .btn--primary,
-:root[data-accent='jade'] .dock__item[data-active='true'],
-:root[data-accent='jade'] .feedv__tab[data-active='true'] {
-  background: linear-gradient(160deg, #5fd8b8, #1f9f7f);
+:root[data-accent='rose'] {
+  --ember: #f43f5e;
+  --ember-light: #fb7185;
+  --ember-strong: #be123c;
+  --accent-ink: #ffffff;
 }
 
-:root[data-accent='violet'] .btn--primary,
-:root[data-accent='violet'] .dock__item[data-active='true'],
-:root[data-accent='violet'] .feedv__tab[data-active='true'] {
-  background: linear-gradient(160deg, #b18cff, #7442e8);
+:root[data-accent='amber'] {
+  --ember: #f59e0b;
+  --ember-light: #fbbf24;
+  --ember-strong: #b45309;
+  --accent-ink: #2a1a00;
 }
 
-:root[data-accent='azure'] .btn--primary,
-:root[data-accent='azure'] .dock__item[data-active='true'],
-:root[data-accent='azure'] .feedv__tab[data-active='true'] {
-  background: linear-gradient(160deg, #6aa9ff, #2563eb);
+/* 所有 accent 共用同一套派生规则：只改 base/light/strong，其余自动跟随 */
+:root,
+:root[data-accent='ember'],
+:root[data-accent='jade'],
+:root[data-accent='violet'],
+:root[data-accent='azure'],
+:root[data-accent='rose'],
+:root[data-accent='amber'] {
+  --ember-soft: color-mix(in srgb, var(--ember) 35%, transparent);
+  --accent-wash: color-mix(in srgb, var(--ember) 14%, transparent);
+  --accent-grad: linear-gradient(160deg, var(--ember-light), var(--ember) 52%, var(--ember-strong));
+  --glow-ember: 0 0 0 1px color-mix(in srgb, var(--ember) 35%, transparent),
+    0 6px 18px -8px color-mix(in srgb, var(--ember) 80%, transparent);
+  --glow-ember-strong: 0 0 0 1px color-mix(in srgb, var(--ember) 50%, transparent),
+    0 10px 28px -10px color-mix(in srgb, var(--ember) 95%, transparent);
+  --focus-ring: color-mix(in srgb, var(--ember) 72%, white 4%);
+}
+
+/* ---------- 主题切换：从点击位置画圆揭示新主题 ---------- */
+::view-transition-old(root) {
+  animation: none;
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  animation: theme-reveal var(--dur-slow) var(--ease-out) both;
+  z-index: 2;
+}
+
+@keyframes theme-reveal {
+  from {
+    clip-path: circle(0px at var(--theme-x) var(--theme-y));
+  }
+  to {
+    clip-path: circle(var(--theme-r) at var(--theme-x) var(--theme-y));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
 }

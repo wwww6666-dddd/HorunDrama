@@ -16,7 +16,7 @@ export type View =
   | 'settings';
 
 export type Theme = 'dark' | 'light';
-export type Accent = 'ember' | 'jade' | 'violet' | 'azure';
+export type Accent = 'ember' | 'jade' | 'violet' | 'azure' | 'rose' | 'amber';
 export type LibraryTab = 'fav' | 'history' | 'likes' | 'follow';
 
 interface AppState {
@@ -53,8 +53,8 @@ interface AppState {
   /** 打开追剧页时默认选中的 tab（侧栏「追更/预约」用） */
   libraryTab: LibraryTab;
   setLibraryTab: (tab: LibraryTab) => void;
-  setTheme: (theme: Theme) => void;
-  toggleTheme: () => void;
+  setTheme: (theme: Theme, origin?: { x: number; y: number }) => void;
+  toggleTheme: (origin?: { x: number; y: number }) => void;
   setAccent: (accent: Accent) => void;
   setCoreOk: (ok: boolean) => void;
   setAccount: (account: AccountStatus | null) => void;
@@ -70,7 +70,16 @@ function readTheme(): Theme {
 
 function readAccent(): Accent {
   const saved = localStorage.getItem('horun-accent');
-  if (saved === 'ember' || saved === 'jade' || saved === 'violet' || saved === 'azure') return saved;
+  if (
+    saved === 'ember' ||
+    saved === 'jade' ||
+    saved === 'violet' ||
+    saved === 'azure' ||
+    saved === 'rose' ||
+    saved === 'amber'
+  ) {
+    return saved;
+  }
   return 'ember';
 }
 
@@ -102,15 +111,43 @@ export const useApp = create<AppState>((set, get) => ({
   libraryTab: 'fav',
   setView: (view) => set({ view }),
   setLibraryTab: (libraryTab) => set({ libraryTab }),
-  setTheme: (theme) => {
-    localStorage.setItem('horun-theme', theme);
-    document.documentElement.dataset.theme = theme;
-    syncShell();
-    // Win11 无边框窗口的 DWM 边框颜色跟 nativeTheme 走：不同步会留一条白边
-    void window.yimu?.setTheme?.(theme).catch(() => undefined);
-    set({ theme });
+  setTheme: (theme, origin) => {
+    const apply = (): void => {
+      localStorage.setItem('horun-theme', theme);
+      document.documentElement.dataset.theme = theme;
+      syncShell();
+      // Win11 无边框窗口的 DWM 边框颜色跟 nativeTheme 走：不同步会留一条白边
+      void window.yimu?.setTheme?.(theme).catch(() => undefined);
+      set({ theme });
+    };
+    const doc = document as Document & {
+      startViewTransition?: (cb: () => void) => { finished: Promise<void> };
+    };
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (origin === undefined || reduce || typeof doc.startViewTransition !== 'function') {
+      apply();
+      return;
+    }
+    // 从点击位置向外画圆：新主题像一层幕布铺开，而不是整页硬闪。
+    // 这套写法来自 GitHub 上常见的 theme-toggle / view-transition 实现。
+    const root = document.documentElement;
+    const radius = Math.hypot(
+      Math.max(origin.x, window.innerWidth - origin.x),
+      Math.max(origin.y, window.innerHeight - origin.y),
+    );
+    root.style.setProperty('--theme-x', `${origin.x}px`);
+    root.style.setProperty('--theme-y', `${origin.y}px`);
+    root.style.setProperty('--theme-r', `${radius}px`);
+    root.dataset.themeTransition = 'true';
+    const transition = doc.startViewTransition(apply);
+    void transition.finished.finally(() => {
+      delete root.dataset.themeTransition;
+      root.style.removeProperty('--theme-x');
+      root.style.removeProperty('--theme-y');
+      root.style.removeProperty('--theme-r');
+    });
   },
-  toggleTheme: () => get().setTheme(get().theme === 'dark' ? 'light' : 'dark'),
+  toggleTheme: (origin) => get().setTheme(get().theme === 'dark' ? 'light' : 'dark', origin),
   setAccent: (accent) => {
     localStorage.setItem('horun-accent', accent);
     document.documentElement.dataset.accent = accent;

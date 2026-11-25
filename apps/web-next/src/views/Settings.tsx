@@ -37,6 +37,8 @@ const ACCENTS: Array<{ value: Accent; label: string; color: string }> = [
   { value: 'jade', label: '青玉', color: '#2fbf9b' },
   { value: 'violet', label: '暮紫', color: '#8b5cf6' },
   { value: 'azure', label: '远蓝', color: '#3b82f6' },
+  { value: 'rose', label: '绯红', color: '#f43f5e' },
+  { value: 'amber', label: '琥珀', color: '#f59e0b' },
 ];
 
 export function Settings(): JSX.Element {
@@ -273,7 +275,13 @@ export function Settings(): JSX.Element {
             <p className="settings-label">主题</p>
             <p className="settings-hint">当前：{theme === 'dark' ? '深色玻璃' : '浅色玻璃'}</p>
           </div>
-          <button className="btn" onClick={toggleTheme}>
+          <button
+            className="btn"
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              toggleTheme({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+            }}
+          >
             切到{theme === 'dark' ? '浅色' : '深色'}
           </button>
         </div>
@@ -281,7 +289,7 @@ export function Settings(): JSX.Element {
         <div className="settings-row">
           <div className="settings-row__grow">
             <p className="settings-label">主题色</p>
-            <p className="settings-hint">暖橙 / 青玉 / 暮紫 / 远蓝，按钮、导航和强调色一起变</p>
+            <p className="settings-hint">暖橙 / 青玉 / 暮紫 / 远蓝 / 绯红 / 琥珀，按钮、导航和强调色一起变；切换主题时从点击处圆形展开</p>
           </div>
           <div className="accent-swatches">
             {ACCENTS.map((item) => (

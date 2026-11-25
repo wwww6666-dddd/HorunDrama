@@ -163,7 +163,10 @@ export function TopBar(): JSX.Element {
         </button>
         <button
           className="btn btn--ghost btn--icon"
-          onClick={toggleTheme}
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            toggleTheme({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+          }}
           title={theme === 'dark' ? '切到浅色' : '切到深色'}
           aria-label="切换主题"
         >

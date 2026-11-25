@@ -196,9 +196,8 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
     };
   }, []);
 
-  // 起播放任务：优先本地缓存（完整时长、能拖进度条）；没有缓存就"等它准备好再播"。
-  // 不做"先 360p / 秒开流"的折中 —— 管道流/直连的进度条体验都不如本地 mp4，
-  // 而前后各 N 集的预加载会把后续集提前转好，追剧时基本不用等。
+  // 起播放任务：优先本地缓存（完整时长、能拖进度条）；没有缓存先拿官网直连
+  // 立刻起播，高清任务放到后台，转好后无缝换源。起播不再等整集转码。
   useEffect(() => {
     let cancelled = false;
     // 换集（选集 / 上一集下一集 / 自动连播）：**立刻把上一集停下**。
@@ -252,8 +251,9 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
           true,
           CAN_PLAY_HEVC && !liveFallback.current,
           false,
-          // wait=1：没有缓存时等高清文件转好再播，不先给 360p/秒开流
-          true,
+          // wait=0：先拿到能播的地址（缓存/官网直连）立刻起播；高清升级在后台跑，
+          // 转好后由 upgrade 队列无缝换源，不再让用户干等整集转码。
+          false,
         );
         if (cancelled) return;
         applyJob(current);

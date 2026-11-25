@@ -34,7 +34,7 @@
 .nr-date[data-active='true'] {
   color: #fff;
   border-color: transparent;
-  background: linear-gradient(180deg, #ff6a44, var(--ember));
+  background: var(--accent-grad);
   box-shadow: var(--glow-ember);
 }
 
@@ -129,7 +129,7 @@
 .nr-status[data-online='false'] {
   color: #ffb08f;
   border-color: rgba(255, 106, 68, 0.4);
-  background: rgba(255, 77, 46, 0.1);
+  background: color-mix(in srgb, var(--ember) 10%, transparent);
 }
 
 .nr-intro {

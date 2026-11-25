@@ -127,7 +127,7 @@ code {
 
 .brand__mark {
   border-radius: 9px;
-  box-shadow: 0 6px 18px -10px rgba(255, 77, 46, 0.9);
+  box-shadow: 0 6px 18px -10px color-mix(in srgb, var(--ember) 90%, transparent);
 }
 
 .brand__name {
@@ -164,7 +164,7 @@ code {
 
 .core-dot[data-state='down'] {
   background: var(--ember);
-  box-shadow: 0 0 0 3px rgba(255, 77, 46, 0.18);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ember) 18%, transparent);
 }
 
 /* ---------- 设计样张 ---------- */

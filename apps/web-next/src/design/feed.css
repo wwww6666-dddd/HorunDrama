@@ -286,7 +286,7 @@
 }
 
 .feedv__info-actions .btn--primary {
-  background: linear-gradient(160deg, #ff8a63, var(--ember));
+  background: var(--accent-grad);
   border-color: transparent;
   color: #fff;
 }
@@ -506,8 +506,8 @@ html.is-player-fullscreen .dock {
 }
 
 .feedv .xgplayer-progress-played {
-  background: linear-gradient(90deg, #ff8a63, var(--ember));
-  box-shadow: 0 0 10px rgba(255, 77, 46, 0.65);
+  background: var(--accent-grad);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--ember) 65%, transparent);
 }
 
 .feedv .xgplayer-time {

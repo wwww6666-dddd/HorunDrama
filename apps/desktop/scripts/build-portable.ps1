@@ -55,9 +55,24 @@ try {
   Move-Item -LiteralPath $zipTemp -Destination $zip -Force
 
   $accept = $AcceptDir
-  if (Test-Path -LiteralPath $accept) { Remove-Item -LiteralPath $accept -Recurse -Force }
-  robocopy $stage $accept /E /NFL /NDL /NP | Out-Null
-  if ($LASTEXITCODE -ge 8) { throw "acceptance copy failed: $LASTEXITCODE" }
+  # Never delete the acceptance folder's data directory: it holds the user's
+  # media cache, settings, session and Chromium profile. Move it aside before
+  # refreshing the payload and restore it afterwards, even if the copy fails.
+  $dataBackup = Join-Path $tempRoot "HorunDrama-data-$id"
+  $hadData = Test-Path -LiteralPath (Join-Path $accept 'data')
+  if ($hadData) {
+    Move-Item -LiteralPath (Join-Path $accept 'data') -Destination $dataBackup -Force
+  }
+  try {
+    if (Test-Path -LiteralPath $accept) { Remove-Item -LiteralPath $accept -Recurse -Force }
+    robocopy $stage $accept /E /NFL /NDL /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "acceptance copy failed: $LASTEXITCODE" }
+  } finally {
+    if ($hadData -and (Test-Path -LiteralPath $dataBackup)) {
+      New-Item -ItemType Directory -Path $accept -Force | Out-Null
+      Move-Item -LiteralPath $dataBackup -Destination (Join-Path $accept 'data') -Force
+    }
+  }
   # Workspace copies inherit a Low integrity label in sandboxed sessions, which
   # stops the app from writing its own data folder. Reset to Medium.
   & icacls $accept /setintegritylevel '(OI)(CI)M' /T /C | Out-Null

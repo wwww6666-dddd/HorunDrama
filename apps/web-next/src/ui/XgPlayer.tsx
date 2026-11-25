@@ -50,8 +50,9 @@ export function XgPlayer({
   /** 首次创建时用的地址；之后的换集走 src 原地切换 */
   const firstUrl = useRef(url);
   const created = useRef(false);
-  /** 换源后需要恢复起播位置/倍速（只做一次） */
-  const pendingApply = useRef(false);
+  /** 换源后需要恢复起播位置/倍速（只做一次，且必须对应当前这次换源） */
+  const loadSeq = useRef(0);
+  const pendingSeq = useRef(0);
 
   useEffect(() => {
     if (host.current === null || firstUrl.current === '' || created.current) return;
@@ -87,10 +88,10 @@ export function XgPlayer({
      * 换源时 media 会重新加载，部分浏览器/内核会把 playbackRate 归到 1x。
      * 不能只依赖 xgplayer 的 canplay 回调（它有时先于我们的恢复逻辑触发），
      * 所以直接在 media 的 loadedmetadata/canplay/playing 三个阶段补一次。
-     * 只在 pendingApply（刚换集）期间做，避免用户手动切倍速后被覆盖。
+     * 只在 pendingSeq（刚换集且 seq 对应）期间做，避免用户手动切倍速后被覆盖。
      */
     const restorePendingRate = (): void => {
-      if (!pendingApply.current || mediaEl === null) return;
+      if (pendingSeq.current === 0 || pendingSeq.current !== loadSeq.current || mediaEl === null) return;
       const next = cbs.current.rate;
       try {
         mediaEl.defaultPlaybackRate = next;
@@ -106,7 +107,7 @@ export function XgPlayer({
     /** xgplayer 自带倍速菜单修改的是 player.playbackRate，必须回传给 React 状态。 */
     const reportRate = (): void => {
       // 换源加载期间可能短暂触发 ratechange（默认速率），此时不能把它当成用户操作。
-      if (pendingApply.current) return;
+      if (pendingSeq.current !== 0) return;
       const media = player.media as HTMLVideoElement | null;
       const next = media?.playbackRate;
       if (typeof next !== 'number' || !Number.isFinite(next) || next <= 0) return;
@@ -157,18 +158,20 @@ export function XgPlayer({
     const seekStart = (): void => {
       if (started) return;
       started = true;
+      pendingSeq.current = 0;
       applyPlayback();
-      pendingApply.current = false;
       cbs.current.onReady?.(player);
       bindWheel();
     };
 
     // 只在两种情况下恢复起播位置：首次 canplay、换源后的第一次 canplay。
     // 不能每次 canplay 都 seek，否则用户拖进度条会被拉回去。
+    // 快速连切时，旧 URL 的 canplay 可能晚到；用 loadSeq 校验，避免它
+    // 消费掉新集的 pendingApply，导致新集不 seek / 不自动播放。
     const onCanPlay = (): void => {
       if (started) {
-        if (pendingApply.current) {
-          pendingApply.current = false;
+        if (pendingSeq.current !== 0 && pendingSeq.current === loadSeq.current) {
+          pendingSeq.current = 0;
           applyPlayback();
         }
         return;
@@ -220,7 +223,8 @@ export function XgPlayer({
     if (media === null) return;
     const current = media.getAttribute('src') ?? '';
     if (current === url) return;
-    pendingApply.current = true;
+    loadSeq.current += 1;
+    pendingSeq.current = loadSeq.current;
     // 先把 defaultPlaybackRate 设好，再 load；否则新 media 的默认速率可能回到 1x。
     try {
       const nextRate = cbs.current.rate;

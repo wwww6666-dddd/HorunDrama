@@ -65,7 +65,6 @@ const JOBS = new Map<string, Job>();
 const INFLIGHT = new Map<string, Promise<Job>>();
 
 const MAX_JOBS = 60;
-const CACHE_LIMIT = mediaCacheLimitBytes();
 
 /** 前端可选的清晰度；smooth 是官网 360p 直连 */
 export const QUALITY_CHOICES = ['smooth', '480p', '720p', '1080p'];
@@ -323,7 +322,7 @@ async function runTranscode(
     job.state = 'ready';
     job.progress = 1;
     job.message = '就绪';
-    void pruneMediaCache(CACHE_LIMIT);
+    void pruneMediaCache(mediaCacheLimitBytes());
   } catch (err) {
     job.state = 'failed';
     job.error = (err as Error).message;
@@ -400,9 +399,11 @@ export async function startEpisode(episodeId: string, quality = 'auto', options:
     if (lower !== null) {
       const job = readyFileJob(episodeId, lower.file, lower.definition, want, `先用已缓存的 ${lower.definition}`);
       if (allowUpgrade) {
-        const hd = await startUpgrade(episodeId, want, allowHevc);
-        job.upgradeJobId = hd?.id ?? '';
         job.upgradeQuality = want;
+        // 先返回可播的旧档，高清在后台慢慢升；不要让起播等上游取流。
+        void startUpgrade(episodeId, want, allowHevc).then((hd) => {
+          job.upgradeJobId = hd?.id ?? '';
+        });
       }
       return job;
     }
@@ -438,13 +439,12 @@ export async function startEpisode(episodeId: string, quality = 'auto', options:
       const job = readyDirectJob(episodeId, want, '流畅播放（可拖动，高清后台准备中）');
       if (allowUpgrade && (want === 'auto' || isHd(want))) {
         const target = isHd(want) ? want : '720p';
-        const hd = await startUpgrade(episodeId, target, allowHevc);
-        if (hd !== null) {
-          job.upgradeJobId = hd.id;
-          job.upgradeQuality = target;
-        } else if (isHd(want)) {
-          job.message = `${target} 暂时取不到，先用流畅播放`;
-        }
+        job.upgradeQuality = target;
+        // 直连地址已经能播：高清任务丢到后台，起播不再等 App 源/转码。
+        void startUpgrade(episodeId, target, allowHevc).then((hd) => {
+          if (hd !== null) job.upgradeJobId = hd.id;
+          else if (isHd(want)) job.message = `${target} 暂时取不到，先用流畅播放`;
+        });
       }
       return job;
     }

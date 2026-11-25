@@ -167,7 +167,7 @@
 
 .ep-btn--on {
   color: var(--text-inverse);
-  background: linear-gradient(180deg, #ff6a45, var(--ember));
+  background: var(--accent-grad);
   border-color: transparent;
   box-shadow: var(--glow-ember);
 }

@@ -60,14 +60,14 @@
 .chip:focus-visible,
 .dock__item:focus-visible,
 input:focus-visible {
-  outline: 2px solid var(--ember);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
 .btn--primary {
   border-color: transparent;
-  background: linear-gradient(180deg, #ff6a45, var(--ember));
-  color: #1a0d09;
+  background: var(--accent-grad);
+  color: var(--accent-ink);
   font-weight: 600;
   box-shadow: var(--glass-highlight), var(--glow-ember);
 }
@@ -122,7 +122,7 @@ input:focus-visible {
 
 .chip--on {
   color: var(--text-inverse);
-  background: linear-gradient(180deg, #ff6a45, var(--ember));
+  background: var(--accent-grad);
   border-color: transparent;
   box-shadow: var(--glow-ember);
 }
@@ -173,7 +173,7 @@ input:focus-visible {
 
 .dock__item[data-active='true'] {
   color: var(--text-inverse);
-  background: linear-gradient(160deg, #ff7a52, var(--ember));
+  background: var(--accent-grad);
   box-shadow: var(--glass-highlight), var(--glow-ember);
 }
 
@@ -236,9 +236,9 @@ input:focus-visible {
 }
 
 .dock__item[data-active='true'] {
-  background: linear-gradient(160deg, #ff8a63, #ff4d2e);
+  background: var(--accent-grad);
   box-shadow:
-    0 12px 26px -12px rgba(255, 77, 46, 0.85),
+    0 12px 26px -12px color-mix(in srgb, var(--ember) 85%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 

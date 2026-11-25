@@ -47,7 +47,7 @@
 .drama-card__empty {
   width: 100%;
   height: 100%;
-  background: linear-gradient(160deg, rgba(255, 77, 46, 0.18), rgba(122, 92, 255, 0.12));
+  background: linear-gradient(160deg, color-mix(in srgb, var(--ember) 18%, transparent), rgba(122, 92, 255, 0.12));
 }
 
 .drama-card__rank {
@@ -63,7 +63,7 @@
   font-size: 12px;
   font-weight: 700;
   color: var(--text-inverse);
-  background: linear-gradient(160deg, #ff7a52, var(--ember));
+  background: var(--accent-grad);
   box-shadow: var(--glow-ember);
 }
 
@@ -137,7 +137,7 @@
 
 .state--error {
   color: var(--text-2);
-  border-color: rgba(255, 77, 46, 0.32);
+  border-color: color-mix(in srgb, var(--ember) 32%, transparent);
 }
 
 /* ---------- 榜单 tab ---------- */
@@ -282,7 +282,7 @@
 .continue-card__bar > span {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, #ff7a52, var(--ember));
+  background: var(--accent-grad);
 }
 
 /* ---------- 追剧列表 ---------- */
@@ -463,7 +463,7 @@
   padding: 10px 12px;
   border-radius: var(--r-card);
   background:
-    linear-gradient(120deg, rgba(255, 77, 46, 0.28), rgba(122, 92, 255, 0.24)),
+    linear-gradient(120deg, color-mix(in srgb, var(--ember) 28%, transparent), rgba(122, 92, 255, 0.24)),
     var(--bg-deep);
   overflow: hidden;
 }

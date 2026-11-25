@@ -1227,7 +1227,24 @@ function createWindow(origin) {
     }
   });
 
-  const target = IS_DEV ? 'http://127.0.0.1:5274' : origin;
+  const splashShownAtUpdate = Date.now();
+  let revealed = false;
+  const reveal = () => {
+    if (revealed) return;
+    revealed = true;
+    const elapsed = Date.now() - splashShownAtUpdate;
+    const wait = Math.max(0, 1100 - elapsed);
+    setTimeout(() => {
+      hideSplash();
+      if (mainWindow !== null && !mainWindow.isDestroyed()) mainWindow.show();
+      clearStartupMarker();
+    }, wait);
+  };
+  // 先挂监听再 loadURL：本地页面可能命中缓存，ready-to-show 会在 loadURL 之后
+  // 立刻触发；如果监听挂晚了，窗口会一直 show:false，只剩启动图。
+  mainWindow.once('ready-to-show', reveal);
+  const revealFallback = setTimeout(reveal, 3000);
+  mainWindow.on('closed', () => clearTimeout(revealFallback));
 
   if (SHOT !== '') {
     mainWindow.webContents.once('did-finish-load', () => {
@@ -1245,18 +1262,7 @@ function createWindow(origin) {
     });
   }
 
-  void mainWindow.loadURL(target);
-
-  const splashShownAtUpdate = Date.now();
-  mainWindow.once('ready-to-show', () => {
-    const elapsed = Date.now() - splashShownAtUpdate;
-    const wait = Math.max(0, 1100 - elapsed);
-    setTimeout(() => {
-      hideSplash();
-      mainWindow?.show();
-      clearStartupMarker();
-    }, wait);
-  });
+  void mainWindow.loadURL(IS_DEV ? 'http://127.0.0.1:5274' : origin);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
