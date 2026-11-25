@@ -282,7 +282,8 @@ export const api = {
     if (upgrade) params.set('upgrade', '1');
     if (hevc) params.set('hevc', '1');
     if (live) params.set('live', '1');
-    // wait=1：没有缓存时"等高清文件准备好再播"，不先给 360p 直连/秒开流
+    // 2.1.0 起默认不传 wait：先给能播的地址（缓存/官网直连），高清后台升。
+    // 仍需“等文件”的调用方可以显式 wait=1。
     if (wait) params.set('wait', '1');
     const qs = params.toString();
     return call<PlayJob>(

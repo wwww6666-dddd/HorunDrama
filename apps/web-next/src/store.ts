@@ -140,12 +140,14 @@ export const useApp = create<AppState>((set, get) => ({
     root.style.setProperty('--theme-r', `${radius}px`);
     root.dataset.themeTransition = 'true';
     const transition = doc.startViewTransition(apply);
-    void transition.finished.finally(() => {
-      delete root.dataset.themeTransition;
-      root.style.removeProperty('--theme-x');
-      root.style.removeProperty('--theme-y');
-      root.style.removeProperty('--theme-r');
-    });
+    void transition.finished
+      .finally(() => {
+        delete root.dataset.themeTransition;
+        root.style.removeProperty('--theme-x');
+        root.style.removeProperty('--theme-y');
+        root.style.removeProperty('--theme-r');
+      })
+      .catch(() => undefined);
   },
   toggleTheme: (origin) => get().setTheme(get().theme === 'dark' ? 'light' : 'dark', origin),
   setAccent: (accent) => {
