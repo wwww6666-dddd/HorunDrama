@@ -179,6 +179,13 @@ export function XgPlayer({
       seekStart();
     };
 
+    // 新源真正开始加载时才把序号落到 pendingSeq；旧源的 canplay 早于
+    // loadstart，因此不会消费新集的恢复状态。
+    const onLoadStart = (): void => {
+      if (loadSeq.current !== 0) pendingSeq.current = loadSeq.current;
+    };
+    mediaEl?.addEventListener('loadstart', onLoadStart);
+
     player.on('canplay', onCanPlay);
     player.on('timeupdate', () => {
       const onTime = cbs.current.onTime;
@@ -194,6 +201,7 @@ export function XgPlayer({
 
     return () => {
       player.root?.removeEventListener('wheel', onWheel, false);
+      mediaEl?.removeEventListener('loadstart', onLoadStart);
       mediaEl?.removeEventListener('loadedmetadata', restorePendingRate);
       mediaEl?.removeEventListener('canplay', restorePendingRate);
       mediaEl?.removeEventListener('playing', restorePendingRate);
@@ -223,8 +231,9 @@ export function XgPlayer({
     if (media === null) return;
     const current = media.getAttribute('src') ?? '';
     if (current === url) return;
+    // 换源序号在 loadstart 时才落到 pendingSeq：旧源的 canplay 可能晚到，
+    // 但它一定早于新源的 loadstart，这样就不会消费新集的恢复状态。
     loadSeq.current += 1;
-    pendingSeq.current = loadSeq.current;
     // 先把 defaultPlaybackRate 设好，再 load；否则新 media 的默认速率可能回到 1x。
     try {
       const nextRate = cbs.current.rate;
