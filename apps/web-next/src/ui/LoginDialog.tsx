@@ -119,7 +119,17 @@ export function LoginDialog(): JSX.Element | null {
       <div className="dialog" role="dialog" aria-modal="true" aria-label="登录" onClick={(e) => e.stopPropagation()}>
         <div className="dialog__head">
           <h2 className="dialog__title">手机号登录</h2>
-          <button className="btn btn--ghost btn--icon" onClick={close} aria-label="关闭">
+          <button
+            type="button"
+            className="btn btn--ghost btn--icon"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              close();
+            }}
+            aria-label="关闭"
+          >
             ✕
           </button>
         </div>

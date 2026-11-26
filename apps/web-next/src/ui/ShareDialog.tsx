@@ -141,7 +141,7 @@ export function ShareDialog(): JSX.Element | null {
 
   return (
     <div className="sharedlg" role="dialog" aria-modal="true" aria-label="分享续播">
-      <button className="sharedlg__mask" aria-label="关闭" onClick={closeShare} />
+      <button type="button" className="sharedlg__mask" aria-label="关闭" onClick={closeShare} />
       <div className="sharedlg__card">
         <header className="sharedlg__head">
           <div>
@@ -150,7 +150,17 @@ export function ShareDialog(): JSX.Element | null {
               分享出去的是红果原链接；把别人发的链接粘回来，先给你看是哪部剧、第几集、从哪开始，再决定要不要看。
             </p>
           </div>
-          <button className="sharedlg__close" onClick={closeShare} aria-label="关闭">
+          <button
+            type="button"
+            className="sharedlg__close"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              closeShare();
+            }}
+            aria-label="关闭"
+          >
             ✕
           </button>
         </header>

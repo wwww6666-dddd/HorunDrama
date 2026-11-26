@@ -1215,3 +1215,39 @@ html.is-player-fullscreen .pset-mask {
 :root[data-theme='light'] .update-pop__hint {
   color: rgba(36, 26, 20, 0.42);
 }
+
+/* ============================================================
+   2.3.0 关闭按钮命中修复
+   遮罩与内容同层时，Chromium 在 backdrop-filter / 全屏 portal 下偶尔
+   把后绘制的遮罩算到最上层，叉号看得见但点不到。这里显式分层：
+   遮罩 z=0，卡片 z=1，叉号 z=2，并让叉号自己吃 pointer 事件。
+   ============================================================ */
+.detail-close {
+  z-index: 3;
+  pointer-events: auto;
+}
+
+.reward__mask,
+.sharedlg__mask {
+  z-index: 0;
+}
+
+.reward__card,
+.sharedlg__card {
+  position: relative;
+  z-index: 1;
+}
+
+.reward__close,
+.sharedlg__close,
+.pset__close,
+.update-pop__close,
+.mini__close,
+.dialog__head .btn--icon,
+.play__comments-head .btn--icon,
+.play__sheet-head .btn--icon {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+}
+

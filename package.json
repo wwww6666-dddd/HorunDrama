@@ -1,7 +1,7 @@
 {
   "name": "horun-drama",
   "private": true,
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "HorunDrama · 个人自用的 Windows 短剧播放器（重做中）",
   "type": "module",
   "packageManager": "pnpm@12.18.0",
@@ -15,6 +15,6 @@
     "build": "pnpm --filter @horun/web-next run build",
     "start": "node apps/core/src/index.ts",
     "typecheck": "pnpm -r --parallel run typecheck",
-    "test": "node --test apps/core/src/account/session-vault.test.cjs apps/core/src/http/static-error.test.cjs apps/core/src/media/safe-name.test.cjs apps/desktop/core-restart.test.cjs apps/desktop/data-root.test.cjs apps/desktop/installer/installer-safety.test.cjs apps/desktop/launcher-fallback.test.cjs apps/desktop/security.test.cjs apps/desktop/session-key.test.cjs apps/desktop/update-script.test.cjs apps/desktop/scripts/uninstall-manifest.test.mjs apps/web-next/src/settings/playback.test.mjs"
+    "test": "node --test apps/core/src/account/session-vault.test.cjs apps/core/src/http/static-error.test.cjs apps/core/src/media/safe-name.test.cjs apps/desktop/core-restart.test.cjs apps/desktop/data-root.test.cjs apps/desktop/installer/installer-safety.test.cjs apps/desktop/launcher-fallback.test.cjs apps/desktop/security.test.cjs apps/desktop/session-key.test.cjs apps/desktop/update-script.test.cjs apps/desktop/scripts/uninstall-manifest.test.mjs apps/web-next/src/settings/playback.test.mjs apps/web-next/src/ui/regression.test.cjs"
   }
 }

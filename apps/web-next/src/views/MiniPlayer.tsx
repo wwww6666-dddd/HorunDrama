@@ -153,7 +153,17 @@ export function MiniPlayer({ route }: { route: MiniRoute }): JSX.Element {
         <button type="button" title="还原到主窗口（双击画面也可以）" onClick={restore}>
           <IconFullscreenExit size={15} />
         </button>
-        <button type="button" className="mini__close" title="关闭小窗" onClick={close}>
+        <button
+          type="button"
+          className="mini__close"
+          title="关闭小窗"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+          }}
+        >
           ✕
         </button>
       </div>

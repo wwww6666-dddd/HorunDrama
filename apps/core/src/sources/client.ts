@@ -8,6 +8,7 @@
  *   2. 上游形状 → 我们的 Drama
  *   3. 封面 HEIC 签名 URL → 免签 JPEG 变体
  */
+import { copyFileSync, existsSync, readFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { createClient, type Client, type SeriesSummary } from 'openhongguo';
 import { DATA_ROOT } from '../config.ts';
@@ -18,10 +19,64 @@ const log = createLogger('app');
 
 let clientPromise: Promise<Client> | null = null;
 
+const PROFILE_PATH = path.join(DATA_ROOT, 'app-device.json');
+
+function validProfile(raw: string): boolean {
+  if (raw.trim() === '' || raw.includes('\0')) return false;
+  try {
+    const parsed = JSON.parse(raw) as { cdid?: unknown; device_id_str?: unknown } | null;
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) && typeof parsed.cdid === 'string' && parsed.cdid !== '';
+  } catch {
+    return false;
+  }
+}
+
+/** 设备档案被异常关机写成全零/截断时，WASM 会一直报 invalid character '\x00'，这里先隔离再重建。 */
+function ensureProfile(): void {
+  if (!existsSync(PROFILE_PATH)) return;
+  let raw = '';
+  try {
+    raw = readFileSync(PROFILE_PATH, 'utf8');
+  } catch {
+    raw = '';
+  }
+  if (validProfile(raw)) {
+    try {
+      copyFileSync(PROFILE_PATH, `${PROFILE_PATH}.bak`);
+    } catch {
+      /* 备份失败不影响启动 */
+    }
+    return;
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  try {
+    renameSync(PROFILE_PATH, `${PROFILE_PATH}.corrupt-${stamp}`);
+  } catch {
+    /* 隔离失败时仍继续，SDK 会尝试覆盖 */
+  }
+  let backup = '';
+  try {
+    backup = readFileSync(`${PROFILE_PATH}.bak`, 'utf8');
+  } catch {
+    /* 没有备份就让 SDK 重新匿名自举 */
+  }
+  if (validProfile(backup)) {
+    try {
+      copyFileSync(`${PROFILE_PATH}.bak`, PROFILE_PATH);
+      log.info('设备档案损坏，已从备份恢复');
+      return;
+    } catch {
+      /* 恢复失败则交给 SDK 重建 */
+    }
+  }
+  log.warn('设备档案损坏，已隔离并重新自举匿名设备');
+}
+
 export function getClient(): Promise<Client> {
+  ensureProfile();
   clientPromise ??= createClient({
     // 设备档案与登录/账号包完全分开：这是"匿名浏览设备"，不是账号设备
-    profile: path.join(DATA_ROOT, 'app-device.json'),
+    profile: PROFILE_PATH,
     log: (line) => log.debug(line),
     retryAttempts: 3,
     deviceResets: 2,

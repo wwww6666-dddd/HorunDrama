@@ -251,7 +251,17 @@ export function UpdateCard(): JSX.Element | null {
             {info.publishedAt !== '' && ` · ${info.publishedAt.slice(0, 10)} 发布`}
           </span>
         </div>
-        <button className="update-pop__close" onClick={dismiss} aria-label="关闭更新提示">
+        <button
+          type="button"
+          className="update-pop__close"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dismiss();
+          }}
+          aria-label="关闭更新提示"
+        >
           关闭 <span aria-hidden="true">✕</span>
         </button>
       </div>

@@ -537,21 +537,6 @@ export function Feed(): JSX.Element {
               }}
             />
           ))}
-          <div className="feedv__side-foot">
-            {hasMore ? (
-              <button
-                type="button"
-                className="feedv__side-more"
-                disabled={loadingMore}
-                onClick={() => void load(false)}
-              >
-                {loadingMore ? <span className="feedv__spinner feedv__spinner--sm" /> : null}
-                {loadingMore ? '加载中…' : moreError !== '' ? '加载失败，重试' : '加载更多'}
-              </button>
-            ) : (
-              <span className="feedv__side-done">已加载全部</span>
-            )}
-          </div>
         </div>
       </aside>
 
@@ -643,7 +628,17 @@ export function Feed(): JSX.Element {
             <header className="play__comments-head">
               <strong>评论</strong>
               <span>{fmtCount(commentTotal) || '0'} 条</span>
-              <button className="btn btn--ghost btn--icon" onClick={() => setCommentTarget(null)} aria-label="关闭">
+              <button
+                type="button"
+                className="btn btn--ghost btn--icon"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setCommentTarget(null);
+                }}
+                aria-label="关闭"
+              >
                 ✕
               </button>
             </header>
@@ -851,7 +846,7 @@ function FeedSlide({
   /**
    * 当前条才起播；离开就卸载播放器并取消轮询。
    *
-   * 和剧场播放页走**完全相同**的取流顺序（wait=1：优先本地 mp4 / 等转码完成），
+   * 和剧场播放页走**相同**的取流顺序（wait=0：先取本地缓存/官网直连立刻起播，高清后台升级），
    * 不再用 `live=1` 的秒开流 —— 那是 1.1.x 推荐页有时 360p、剧场页却秒开 1080p
    * 的根因。quality 变化时不卸载播放器，只在就绪后原地换源并保留进度。
    */

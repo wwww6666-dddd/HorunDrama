@@ -71,7 +71,7 @@ export function RewardDialog(): JSX.Element | null {
 
   return (
     <div className="reward" role="dialog" aria-modal="true" aria-label="打赏支持">
-      <button className="reward__mask" aria-label="关闭" onClick={closeReward} />
+      <button type="button" className="reward__mask" aria-label="关闭" onClick={closeReward} />
       <div className="reward__card">
         <header className="reward__head">
           <div>
@@ -80,7 +80,17 @@ export function RewardDialog(): JSX.Element | null {
               作者 {APP_AUTHOR} · 这个小客户端是个人业余维护的，一杯奶茶就能让它多活一阵子
             </p>
           </div>
-          <button className="reward__close" onClick={closeReward} aria-label="关闭">
+          <button
+            type="button"
+            className="reward__close"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              closeReward();
+            }}
+            aria-label="关闭"
+          >
             ✕
           </button>
         </header>

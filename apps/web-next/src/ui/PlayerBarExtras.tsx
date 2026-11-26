@@ -200,7 +200,17 @@ export function PlayerBarExtras({
         <header className="pset__head">
           <strong>播放器设置</strong>
           <span>即时生效并保存</span>
-          <button className="pset__close" onClick={() => setSettingsOpen(false)} aria-label="关闭设置">
+          <button
+            type="button"
+            className="pset__close"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setSettingsOpen(false);
+            }}
+            aria-label="关闭设置"
+          >
             ✕
           </button>
         </header>

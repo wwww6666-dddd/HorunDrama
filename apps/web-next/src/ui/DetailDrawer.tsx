@@ -56,7 +56,18 @@ export function DetailDrawer({ seriesId }: { seriesId: string }): JSX.Element {
         aria-modal="true"
         aria-label={data?.drama.title ?? '剧集详情'}
       >
-        <button className="detail-close" onClick={closeDetail} title="收起" aria-label="收起">
+        <button
+          type="button"
+          className="detail-close"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            closeDetail();
+          }}
+          title="收起"
+          aria-label="收起"
+        >
           ✕
         </button>
 

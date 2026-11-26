@@ -53,6 +53,15 @@ function cachedEpisodes(seriesId: string): Array<{ episodeId: string; no: number
   }
 }
 
+/** 清晰度档位排序：缓存里可能还留着上一版转的 360/480，只要低于目标就继续升清。 */
+function definitionRank(definition: string): number {
+  if (definition.includes('1080')) return 3;
+  if (definition.includes('720')) return 2;
+  if (definition.includes('480')) return 1;
+  if (definition.includes('360')) return 0;
+  return -1;
+}
+
 function fmtCount(n: number | undefined): string {
   if (n === undefined || n <= 0) return '';
   if (n >= 100_000_000) return `${(n / 100_000_000).toFixed(1)}亿`;
@@ -299,15 +308,18 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
     };
   }, [route.episodeId, quality, qualityNonce]);
 
-  // 上游不总是肯给高清：正在播 360p 时，先立刻问一次高清任务，之后每 3 分钟再试。
+  // 上游不总是肯给高清：正在播 360p/480p 时，先立刻问一次高清任务，之后每 3 分钟再试。
+  // 缓存里也可能留着上一版转的 360p，所以 file/direct 两种起播方式都要走到这里。
   // 通了就无缝换源（用户不需要手动重试）。
   useEffect(() => {
     if (quality === 'smooth') return;
-    if (job?.mode !== 'direct' || job.state !== 'ready') return;
+    if (job?.state !== 'ready' || job.url === '') return;
+    const target = quality === '' ? '1080p' : quality;
+    if (definitionRank(job.definition) >= definitionRank(target)) return;
     if (upgradeJobId !== '' || upgrade !== null) return;
     let cancelled = false;
     const ask = async (): Promise<void> => {
-      const next = await api.startUpgrade(route.episodeId, quality === '' ? '720p' : quality, CAN_PLAY_HEVC && !liveFallback.current).catch(() => null);
+      const next = await api.startUpgrade(route.episodeId, target, CAN_PLAY_HEVC && !liveFallback.current).catch(() => null);
       if (cancelled || next === null || next.state === 'failed') return;
       setUpgradeJobId(next.jobId);
     };
@@ -319,7 +331,7 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
       window.clearTimeout(first);
       window.clearInterval(timer);
     };
-  }, [job?.mode, job?.state, job?.jobId, upgradeJobId, upgrade, quality, route.episodeId]);
+  }, [job?.mode, job?.state, job?.jobId, job?.definition, job?.url, upgradeJobId, upgrade, quality, route.episodeId]);
 
   // 后台高清任务：转好就无缝换源（保留当前进度），失败就继续播流畅版
   useEffect(() => {
@@ -352,6 +364,38 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
       cancelled = true;
     };
   }, [upgradeJobId, job?.definition, job?.upgradeQuality, quality, flash]);
+
+  // 兜底换源：core 起播时是「先给 360p，再异步补 upgradeJobId」，
+  // 所以第一次拿到 job 时 upgradeJobId 可能是空的；这里直接回查播放接口，
+  // 高清缓存一出现就无缝换过去（不需要用户手动刷新/重进）。
+  useEffect(() => {
+    if (quality === 'smooth' || upgrade !== null) return;
+    if (job?.state !== 'ready' || job.url === '') return;
+    const target = quality === '' ? '1080p' : quality;
+    if (definitionRank(job.definition) >= definitionRank(target)) return;
+    let alive = true;
+    const startedAt = Date.now();
+    const check = async (): Promise<void> => {
+      if (!alive) return;
+      if (Date.now() - startedAt > 120_000) return;
+      const next = await api
+        .play(route.episodeId, target, true, CAN_PLAY_HEVC && !liveFallback.current, false, false)
+        .catch(() => null);
+      if (!alive || next === null || next.state !== 'ready' || next.url === '') return;
+      if (definitionRank(next.definition) < definitionRank(target)) return;
+      const at = playerRef.current?.currentTime ?? 0;
+      if (at > 1) setStartAt(at);
+      setUpgrade({ url: next.url, definition: next.definition });
+      setPlayingDefinition(next.definition);
+    };
+    const first = window.setTimeout(() => void check(), 4000);
+    const timer = window.setInterval(() => void check(), 6000);
+    return () => {
+      alive = false;
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
+  }, [job?.definition, job?.state, job?.url, upgrade, quality, route.episodeId]);
 
   // 算续播点：切清晰度保留当前位置；分享链接带来的 ?t= 优先；否则本地/账号取更新的，再套跳片头
   useEffect(() => {
@@ -892,6 +936,11 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
 
   const onTime = useCallback(
     (t: number, d: number): void => {
+      // xgplayer 的 play/pause 事件在换源、全屏切换时偶发丢失；
+      // 位置在推进且 <video> 确实没暂停，就以实际媒体状态为准解锁弹幕，
+      // 避免 paused 状态永远停在 true 导致整层弹幕冻结。
+      const media = playerRef.current?.media as HTMLVideoElement | null;
+      if (media !== null && media !== undefined && media.paused === false) setPlaying(true);
       setTime(t);
       // 播到 25 秒就把下一集的 360p 地址预热好（一集只有一次，成本极低）
       if (t > 25) {
@@ -1134,7 +1183,17 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
             <header className="play__comments-head">
               <strong>评论</strong>
               <span>{fmtCount(episode?.commentCount ?? 0) || '0'} 条</span>
-              <button className="btn btn--ghost btn--icon" onClick={() => setCommentsOpen(false)} aria-label="关闭">
+              <button
+                type="button"
+                className="btn btn--ghost btn--icon"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setCommentsOpen(false);
+                }}
+                aria-label="关闭"
+              >
                 ✕
               </button>
             </header>
@@ -1257,7 +1316,17 @@ export function Play({ route }: { route: PlayRoute }): JSX.Element {
             <header className="play__sheet-head">
               <strong>选集</strong>
               <span>{episodeCount > 0 ? `全 ${episodeCount} 集` : ''}</span>
-              <button className="btn btn--ghost btn--icon" onClick={() => setEpisodesOpen(false)} aria-label="关闭">
+              <button
+                type="button"
+                className="btn btn--ghost btn--icon"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setEpisodesOpen(false);
+                }}
+                aria-label="关闭"
+              >
                 ✕
               </button>
             </header>
