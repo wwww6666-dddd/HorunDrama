@@ -36,9 +36,9 @@ $zip = Join-Path $release "HorunDrama-$Version-win64-portable.zip"
 
 try {
   New-Item -ItemType Directory -Path $stage | Out-Null
-  # Exclude every root-level txt (stale portable marker or usage note) and copy
-  # the current usage note back from resources, so the zip always ships one.
-  robocopy $source $stage /E /XD data docs .git /XF '*.txt' | Out-Null
+  # Exclude every root-level txt (stale portable marker or usage note), runtime
+  # debug logs and crash dumps; the zip should only contain shipped files.
+  robocopy $source $stage /E /XD data docs .git /XF '*.txt' 'debug.log' '*.dmp' | Out-Null
   if ($LASTEXITCODE -ge 8) { throw "robocopy failed: $LASTEXITCODE" }
 
   Get-ChildItem (Join-Path $desktop 'resources') -Filter '*.txt' -File | ForEach-Object {
